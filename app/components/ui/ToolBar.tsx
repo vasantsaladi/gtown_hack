@@ -36,7 +36,7 @@ const Button = ({ icon: Icon, label, onClick }: { icon: LucideIcon; label: strin
 
 export function ToolBar({ onToggleSidebar }: ToolBarProps) {
   return (
-    <div className="fixed right-2 top-2 bg-white rounded-lg shadow-lg p-2 w-[300px]">
+    <div className="fixed right-2 top-2 bottom-2 bg-white rounded-lg shadow-lg p-2 w-[300px] overflow-y-auto">
       <div className="flex flex-col gap-2">
         {/* Header with toggle */}
         <div className="flex items-center justify-between border-b pb-2">
