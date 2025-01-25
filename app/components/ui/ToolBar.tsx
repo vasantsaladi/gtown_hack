@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { 
-  Menu,
   Bookmark,
   Clock,
   UserSquare,
@@ -23,10 +22,6 @@ import {
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 
-interface ToolBarProps {
-  onToggleSidebar?: () => void;
-}
-
 // Internal button component
 const Button = ({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick?: () => void }) => (
   <button
@@ -38,7 +33,7 @@ const Button = ({ icon: Icon, label, onClick }: { icon: LucideIcon; label: strin
   </button>
 );
 
-export function ToolBar({ onToggleSidebar }: ToolBarProps) {
+export function ToolBar() {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
 
   return (
@@ -61,11 +56,6 @@ export function ToolBar({ onToggleSidebar }: ToolBarProps) {
 
         {/* Content container with conditional rendering */}
         <div className={`${isCollapsed ? 'hidden' : 'block'} mt-8`}>
-          {/* Header with toggle */}
-          <div className="flex items-center justify-between border-b pb-2">
-            <Button icon={Menu} onClick={onToggleSidebar} label="Show side bar" />
-          </div>
-
           {/* Main navigation items */}
           <div className="flex flex-col gap-1">
             <Button icon={Bookmark} label="Saved" />
