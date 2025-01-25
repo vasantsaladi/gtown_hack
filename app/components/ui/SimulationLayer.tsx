@@ -30,48 +30,115 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
   const peopleRef = useRef<Person[]>([]);
   const routeCacheRef = useRef<Map<string, [number, number][]>>(new Map());
 
+  const isPointInDC = (point: [number, number]): boolean => {
+    // DC bounding box coordinates
+    const dcBounds = {
+      minLng: -77.1197,
+      maxLng: -76.909,
+      minLat: 38.7916,
+      maxLat: 38.9955,
+    };
+
+    return (
+      point[0] >= dcBounds.minLng &&
+      point[0] <= dcBounds.maxLng &&
+      point[1] >= dcBounds.minLat &&
+      point[1] <= dcBounds.maxLat
+    );
+  };
+
+  const generateValidPointInTract = (tract: any): [number, number] => {
+    let attempts = 0;
+    const maxAttempts = 50;
+
+    while (attempts < maxAttempts) {
+      const point = turf.randomPoint(1, {
+        bbox: turf.bbox(tract.geometry),
+      });
+      const coords = point.features[0].geometry.coordinates as [number, number];
+
+      if (
+        isPointInDC(coords) &&
+        turf.booleanPointInPolygon(point.features[0], tract.geometry)
+      ) {
+        return coords;
+      }
+      attempts++;
+    }
+
+    // If we can't find a valid point after max attempts, use tract centroid
+    const center = turf.centroid(tract.geometry);
+    return center.geometry.coordinates as [number, number];
+  };
+
   const getRoute = async (
     start: [number, number],
     end: [number, number]
   ): Promise<[number, number][]> => {
-    // Create cache key
     const cacheKey = `${start.join(",")}-${end.join(",")}`;
 
-    // Check cache first
     if (routeCacheRef.current.has(cacheKey)) {
       return routeCacheRef.current.get(cacheKey)!;
     }
 
-    // Add longer delay between requests (500ms)
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
     try {
+      // Add delay between requests to avoid rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       const query = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${mapboxgl.accessToken}`
+        `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`
       );
 
-      if (query.status === 429) {
-        console.log("Rate limit hit, using direct route");
-        return [start, end];
+      const json = await query.json();
+
+      if (!json.routes || json.routes.length === 0) {
+        throw new Error("No route found");
       }
 
-      const json = await query.json();
-      const route = json.routes?.[0]?.geometry.coordinates || [start, end];
+      const route = json.routes[0].geometry.coordinates as [number, number][];
 
-      // Cache the route
+      // Ensure we have enough points for smooth animation
+      if (route.length < 2) {
+        throw new Error("Route too short");
+      }
+
+      // Cache the valid route
       routeCacheRef.current.set(cacheKey, route);
-      return route as [number, number][];
+      return route;
     } catch (error) {
       console.error("Route error:", error);
-      return [start, end];
+
+      // If we don't have a cached route, try one more time after a delay
+      if (!routeCacheRef.current.has(cacheKey)) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        try {
+          const retryQuery = await fetch(
+            `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`
+          );
+          const retryJson = await retryQuery.json();
+          if (retryJson.routes && retryJson.routes.length > 0) {
+            const retryRoute = retryJson.routes[0].geometry.coordinates as [
+              number,
+              number
+            ][];
+            if (retryRoute.length >= 2) {
+              routeCacheRef.current.set(cacheKey, retryRoute);
+              return retryRoute;
+            }
+          }
+        } catch (retryError) {
+          console.error("Retry route error:", retryError);
+        }
+      }
+
+      // If all else fails, return the cached route or create a new one
+      return routeCacheRef.current.get(cacheKey) || [start, end];
     }
   };
 
   const findNearestStore = (
     point: [number, number],
-    stores: {
-      features: Array<StoreFeature>;
-    }
+    stores: { features: Array<StoreFeature> }
   ): [number, number] => {
     let nearestStore: [number, number] | null = null;
     let minDistance = Infinity;
@@ -88,46 +155,34 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
       }
     });
 
-    if (!nearestStore) {
-      return point;
-    }
-
-    return nearestStore;
+    return nearestStore || point;
   };
 
   useEffect(() => {
     const initialize = async () => {
-      console.log("Starting initialization");
-
       const [tractsResponse, storesResponse, csvData] = await Promise.all([
         fetch("/data/Census_Tracts_in_2020.geojson"),
         fetch("/data/Grocery_Store_Locations.geojson"),
         fetch("/data/cleaned_census_tracts.csv").then((res) => res.text()),
       ]);
 
-      const tracts = await tractsResponse.json();
-      const stores = await storesResponse.json();
+      const [tracts, stores] = await Promise.all([
+        tractsResponse.json(),
+        storesResponse.json(),
+      ]);
+
       const csvJson = Papa.parse(csvData, { header: true }).data as {
         GEOID: string;
         pop_percent: string;
       }[];
 
-      // Create a map from GEOID to pop_percent
       const popPercentMap = new Map<string, number>();
       csvJson.forEach((row) => {
         popPercentMap.set(row.GEOID, parseFloat(row.pop_percent));
       });
 
-      // Debug logs
-      console.log("Sample CSV GEOID:", csvJson[0].GEOID);
-      console.log("Sample Tract GEOID:", tracts.features[0].properties.GEOID);
-      console.log(
-        "popPercent for first tract:",
-        popPercentMap.get(tracts.features[0].properties.GEOID)
-      );
-
       const newPeople: Person[] = [];
-      const totalPeopleToCreate = 200; // Changed to 200 total people
+      const totalPeopleToCreate = 200;
 
       for (const tract of tracts.features) {
         const tractId = tract.properties.GEOID;
@@ -136,41 +191,40 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
         if (tractPeople === 0) continue;
 
-        console.log(
-          `Creating ${tractPeople} people for tract ${
-            tract.properties.GEOID
-          } (${(popPercent * 100).toFixed(2)}% of population)`
-        );
-
         for (
           let i = 0;
           i < tractPeople && newPeople.length < totalPeopleToCreate;
           i++
         ) {
-          // Generate random point within tract boundary
-          const point = turf.randomPoint(1, {
-            bbox: turf.bbox(tract.geometry),
-          });
-          const home = point.features[0].geometry.coordinates as [
-            number,
-            number
-          ];
-
-          // Find nearest store
+          const home = generateValidPointInTract(tract);
           const targetStore = findNearestStore(home, stores);
 
-          // Create marker element
+          // Only create person if both home and target are in DC
+          if (!isPointInDC(home) || !isPointInDC(targetStore)) {
+            continue;
+          }
+
+          // Get initial route
+          const route = await getRoute(home, targetStore);
+
           const el = document.createElement("div");
           el.style.cssText = `
-            width: 8px;
-            height: 8px;
-            background-color: red;
+            width: 12px;
+            height: 12px;
+            background-color: #2ecc71;
             border-radius: 50%;
             border: 2px solid white;
-            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+            box-shadow: 0 0 3px rgba(0,0,0,0.5);
           `;
 
-          const marker = new mapboxgl.Marker(el).setLngLat(home).addTo(map);
+          const marker = new mapboxgl.Marker(el)
+            .setLngLat(home)
+            .setPopup(
+              new mapboxgl.Popup({ offset: 25 }).setHTML(
+                `<div>Tract: ${tractId}</div>`
+              )
+            )
+            .addTo(map);
 
           newPeople.push({
             id: `person-${newPeople.length}`,
@@ -179,37 +233,44 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
             targetStore,
             progress: Math.random(),
             isReturning: Math.random() > 0.5,
-            route: [home, targetStore],
-            tractId: tract.properties.GEOID,
+            route,
+            tractId,
           });
         }
       }
 
-      console.log(`Created total of ${newPeople.length} people`);
       peopleRef.current = newPeople;
       animate();
     };
 
     const animate = () => {
-      const currentPeople = peopleRef.current;
-      const updatedPeople = currentPeople.map((person) => {
+      peopleRef.current = peopleRef.current.map((person) => {
         try {
-          // Use getRoute when initializing route
+          // Ensure we have a valid route
           if (!person.route || person.route.length < 2) {
-            getRoute(person.home, person.targetStore).then((route) => {
-              person.route = route;
+            getRoute(
+              person.isReturning ? person.targetStore : person.home,
+              person.isReturning ? person.home : person.targetStore
+            ).then((newRoute) => {
+              person.route = newRoute;
             });
+            return person;
           }
 
           const route = person.isReturning
-            ? person.route.slice().reverse() // Reverse the route for return journey
+            ? [...person.route].reverse()
             : person.route;
 
           const line = turf.lineString(route);
-          const distance = turf.length(line);
-          const currentPosition = turf.along(line, person.progress * distance);
+          const currentPosition = turf.along(
+            line,
+            person.progress * turf.length(line)
+          );
 
-          // Update marker position
+          // Update marker color based on direction
+          const el = person.marker.getElement();
+          el.style.backgroundColor = person.isReturning ? "#ffd700" : "#2ecc71";
+
           person.marker.setLngLat(
             currentPosition.geometry.coordinates as [number, number]
           );
@@ -220,6 +281,19 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
           if (newProgress >= 1) {
             newProgress = 0;
             isReturning = !isReturning;
+
+            // Get new route for next journey
+            getRoute(
+              isReturning ? person.targetStore : person.home,
+              isReturning ? person.home : person.targetStore
+            ).then((newRoute) => {
+              if (newRoute && newRoute.length >= 2) {
+                person.route = newRoute;
+              }
+              // Update color
+              const el = person.marker.getElement();
+              el.style.backgroundColor = isReturning ? "#ffd700" : "#2ecc71";
+            });
           }
 
           return {
@@ -233,7 +307,6 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
         }
       });
 
-      peopleRef.current = updatedPeople;
       animationFrameRef.current = requestAnimationFrame(animate);
     };
 
