@@ -173,19 +173,20 @@ export default function MapboxMap() {
             minzoom: 12,
             paint: {
               "fill-extrusion-color": [
-                "interpolate",
-                ["linear"],
-                ["get", "height"],
-                0,
-                "#e6e6e6",
-                50,
-                "#c9d1d9",
-                100,
-                "#8b98a5",
-                200,
-                "#6e7c91",
-                300,
-                "#464f5d",
+                "case",
+                // Check if the building's coordinates match any grocery store location
+                ["boolean", ["feature-state", "isGroceryStore"], false],
+                "#4287f5", // Blue color for grocery stores
+                // Original color interpolation for other buildings
+                ["interpolate",
+                  ["linear"],
+                  ["get", "height"],
+                  0, "#e6e6e6",
+                  50, "#c9d1d9",
+                  100, "#8b98a5",
+                  200, "#6e7c91",
+                  300, "#464f5d"
+                ]
               ],
               "fill-extrusion-height": [
                 "interpolate",
@@ -536,6 +537,35 @@ export default function MapboxMap() {
           map.current.on("mouseleave", "grocery-stores", () => {
             if (map.current) {
               map.current.getCanvas().style.cursor = "";
+            }
+          });
+
+          // After loading grocery stores data, set feature state for matching buildings
+          map.current.on('sourcedata', (e) => {
+            if (e.sourceId === 'grocery-stores' && e.isSourceLoaded && map.current) {
+              const groceryStores = map.current.querySourceFeatures('grocery-stores');
+              
+              groceryStores.forEach(store => {
+                const storeCoords = (store.geometry as GeoJSON.Point).coordinates;
+                
+                // Query buildings at the grocery store location
+                const buildings = map.current?.queryRenderedFeatures(
+                  map.current.project([storeCoords[0], storeCoords[1]]),
+                  { layers: ['3d-buildings'] }
+                );
+
+                // Set feature state for the closest building
+                if (buildings && buildings.length > 0 && buildings[0].id) {
+                  map.current?.setFeatureState(
+                    {
+                      source: 'composite',
+                      sourceLayer: 'building',
+                      id: buildings[0].id
+                    },
+                    { isGroceryStore: true }
+                  );
+                }
+              });
             }
           });
         });
