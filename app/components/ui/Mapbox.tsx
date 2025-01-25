@@ -103,7 +103,7 @@ export default function MapboxMap() {
         map.current.on("load", () => {
           if (!map.current) return;
 
-          // Add 3D terrain
+          // Add 3D terrain (only once)
           map.current.addSource("mapbox-dem", {
             type: "raster-dem",
             url: "mapbox://mapbox.mapbox-terrain-dem-v1",
@@ -116,66 +116,7 @@ export default function MapboxMap() {
             exaggeration: 1.5,
           });
 
-          // Add 3D buildings with better colors
-          map.current.addLayer({
-            id: "3d-buildings",
-            source: "composite",
-            "source-layer": "building",
-            filter: ["==", "extrude", "true"],
-            type: "fill-extrusion",
-            minzoom: 12,
-            paint: {
-              "fill-extrusion-color": [
-                "interpolate",
-                ["linear"],
-                ["get", "height"],
-                0,
-                "#e6e6e6",
-                50,
-                "#c9d1d9",
-                100,
-                "#8b98a5",
-                200,
-                "#6e7c91",
-                300,
-                "#464f5d",
-              ],
-              "fill-extrusion-height": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                15,
-                0,
-                15.05,
-                ["get", "height"],
-              ],
-              "fill-extrusion-base": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                15,
-                0,
-                15.05,
-                ["get", "min_height"],
-              ],
-              "fill-extrusion-opacity": 0.8,
-            },
-          });
-
-          // Add 3D terrain
-          map.current.addSource("mapbox-dem", {
-            type: "raster-dem",
-            url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-            tileSize: 512,
-            maxzoom: 14,
-          });
-
-          map.current.setTerrain({
-            source: "mapbox-dem",
-            exaggeration: 1.5,
-          });
-
-          // Add 3D buildings with better colors
+          // Add 3D buildings
           map.current.addLayer({
             id: "3d-buildings",
             source: "composite",
@@ -227,8 +168,7 @@ export default function MapboxMap() {
             data: "/data/Neighborhood_Clusters.geojson",
           });
 
-          // Add neighborhood boundaries with enhanced colors
-          // Add neighborhood boundaries with enhanced colors
+          // Add neighborhood boundaries
           map.current.addLayer({
             id: "neighborhood-borders",
             type: "line",
@@ -236,14 +176,12 @@ export default function MapboxMap() {
             layout: {},
             paint: {
               "line-color": "#4264fb",
-              "line-color": "#4264fb",
               "line-width": 2,
-              "line-opacity": 0.8,
               "line-opacity": 0.8,
             },
           });
 
-          // Add neighborhood fills with better colors
+          // Add neighborhood fills
           map.current.addLayer({
             id: "neighborhood-fills",
             type: "fill",
@@ -253,7 +191,6 @@ export default function MapboxMap() {
               "fill-color": [
                 "match",
                 ["get", "NAME"],
-                // Color specific clusters red
                 [
                   "Cluster 44",
                   "Cluster 39",
@@ -271,19 +208,10 @@ export default function MapboxMap() {
                   "Cluster 31",
                 ],
                 "red",
-                "rgba(0, 0, 0, 0.1)", // Default color for all other clusters
+                "rgba(0, 0, 0, 0.1)", // Default color
               ],
               "fill-opacity": 0.5,
             },
-          });
-
-          // Enhanced atmosphere effect
-          map.current.setFog({
-            color: "rgb(220, 230, 240)", // Lighter lower atmosphere
-            "high-color": "rgb(150, 180, 220)", // Softer upper atmosphere
-            "horizon-blend": 0.1,
-            "space-color": "rgb(25, 35, 60)",
-            "star-intensity": 0.15,
           });
 
           // Enhanced atmosphere effect
@@ -307,24 +235,11 @@ export default function MapboxMap() {
               0.4,
               0.2,
             ]);
-
-            // Highlight hovered neighborhood
-            map.current.setPaintProperty("neighborhood-fills", "fill-opacity", [
-              "case",
-              ["boolean", ["feature-state", "hover"], false],
-              0.4,
-              0.2,
-            ]);
           });
 
           map.current.on("mouseleave", "neighborhood-fills", () => {
             if (!map.current) return;
             map.current.getCanvas().style.cursor = "";
-            map.current.setPaintProperty(
-              "neighborhood-fills",
-              "fill-opacity",
-              0.2
-            );
             map.current.setPaintProperty(
               "neighborhood-fills",
               "fill-opacity",
