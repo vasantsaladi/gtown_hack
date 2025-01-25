@@ -14,22 +14,36 @@ interface Person {
   targetStore: [number, number];
   progress: number;
   isReturning: boolean;
+  route: [number, number][];
 }
 
 export function SimulationLayer({ map }: SimulationLayerProps) {
   const animationFrameRef = useRef<number | null>(null);
   const peopleRef = useRef<Person[]>([]);
 
+  const getRoute = async (start: [number, number], end: [number, number]) => {
+    const query = await fetch(
+      `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${mapboxgl.accessToken}`
+    );
+    const json = await query.json();
+    return json.routes[0].geometry.coordinates as [number, number][];
+  };
+
   useEffect(() => {
     console.log("SimulationLayer mounted");
 
-    const createPeople = () => {
+    const createPeople = async () => {
       console.log("Creating people");
-      const newPeople = Array.from({ length: 10 }, (_, i) => {
+      const newPeople: Person[] = [];
+
+      for (let i = 0; i < 10; i++) {
         const home: [number, number] = [
           -77.03 + Math.random() * 0.05,
           38.89 + Math.random() * 0.05,
         ];
+        const targetStore: [number, number] = [-77.02, 38.9];
+
+        const initialRoute = await getRoute(home, targetStore);
 
         const el = document.createElement("div");
         el.style.cssText = `
@@ -42,15 +56,16 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
         const marker = new mapboxgl.Marker(el).setLngLat(home).addTo(map);
 
-        return {
+        newPeople.push({
           id: `person-${i}`,
           marker,
           home,
-          targetStore: [-77.02, 38.9] as [number, number],
-          progress: Math.random(),
+          targetStore,
+          progress: 0,
           isReturning: false,
-        };
-      });
+          route: initialRoute,
+        });
+      }
 
       peopleRef.current = newPeople;
     };
@@ -58,13 +73,12 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
     const animate = () => {
       const currentPeople = peopleRef.current;
       const updatedPeople = currentPeople.map((person) => {
-        const route = person.isReturning
-          ? [person.targetStore, person.home]
-          : [person.home, person.targetStore];
-
-        const line = turf.lineString(route);
-        const distance = turf.length(line);
-        const currentPosition = turf.along(line, person.progress * distance);
+        const route = person.route;
+        const distance = turf.length(turf.lineString(route));
+        const currentPosition = turf.along(
+          turf.lineString(route),
+          person.progress * distance
+        );
 
         person.marker.setLngLat(
           currentPosition.geometry.coordinates as [number, number]
@@ -72,16 +86,24 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
         let newProgress = person.progress + 0.001;
         let isReturning = person.isReturning;
+        const newRoute = person.route;
 
         if (newProgress >= 1) {
           newProgress = 0;
           isReturning = !isReturning;
+          getRoute(
+            isReturning ? person.targetStore : person.home,
+            isReturning ? person.home : person.targetStore
+          ).then((route) => {
+            person.route = route;
+          });
         }
 
         return {
           ...person,
           progress: newProgress,
           isReturning,
+          route: newRoute,
         };
       });
 
@@ -89,8 +111,9 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
       animationFrameRef.current = requestAnimationFrame(animate);
     };
 
-    createPeople();
-    animate();
+    createPeople().then(() => {
+      animate();
+    });
 
     return () => {
       if (animationFrameRef.current) {
