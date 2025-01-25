@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
 import Papa from "papaparse";
@@ -26,64 +26,70 @@ interface StoreFeature {
 }
 
 export function SimulationLayer({ map }: SimulationLayerProps) {
-  const animationFrameRef = useRef<number | null>(null);
   const peopleRef = useRef<Person[]>([]);
   const routeCacheRef = useRef<Map<string, [number, number][]>>(new Map());
-  const lastRequestTimeRef = useRef<number>(0);
-  const isMountedRef = useRef(true);
+  const animationRef = useRef<number>(0);
+  const [, setForceUpdate] = useState(0);
+  const lastRequestRef = useRef<number>(0);
 
   const getRoute = async (
     start: [number, number],
     end: [number, number]
   ): Promise<[number, number][]> => {
-    const cacheKey = `${start.join(",")}-${end.join(",")}`;
-    const reverseKey = `${end.join(",")}-${start.join(",")}`;
+    const cacheKey = `${start[0]},${start[1]}-${end[0]},${end[1]}`;
+    const reverseKey = `${end[0]},${end[1]}-${start[0]},${start[1]}`;
 
+    // Check both directions
     if (routeCacheRef.current.has(cacheKey))
       return routeCacheRef.current.get(cacheKey)!;
     if (routeCacheRef.current.has(reverseKey))
       return [...routeCacheRef.current.get(reverseKey)!].reverse();
 
+    // Rate limit: 1 request every 300ms (~3 requests/second)
     const now = Date.now();
-    const timeSinceLast = now - lastRequestTimeRef.current;
-    const delay = Math.max(300 - timeSinceLast, 0); // 300ms between requests
-
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(300 - (now - lastRequestRef.current), 0))
+    );
+    lastRequestRef.current = Date.now();
 
     try {
-      lastRequestTimeRef.current = Date.now();
       const response = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${mapboxgl.accessToken}`
+        `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?` +
+          new URLSearchParams({
+            steps: "true",
+            geometries: "geojson",
+            overview: "full",
+            access_token: mapboxgl.accessToken as string,
+            approaches: "curb;curb", // Snap to roads
+          })
       );
 
-      if (response.status === 429) {
-        console.log("Rate limited - using direct route");
-        return [start, end];
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const json = await response.json();
-      const route = json.routes?.[0]?.geometry?.coordinates || [start, end];
+      const route = json.routes?.[0]?.geometry?.coordinates || [];
 
-      routeCacheRef.current.set(cacheKey, route);
-      routeCacheRef.current.set(reverseKey, [...route].reverse());
+      // Validate route
+      if (route.length > 1) {
+        routeCacheRef.current.set(cacheKey, route);
+        routeCacheRef.current.set(reverseKey, [...route].reverse());
+      }
 
-      return route as [number, number][];
-    } catch (error) {
-      console.error("Route error:", error);
-      return [start, end];
+      return route;
+    } catch (err) {
+      console.error("Routing error:", err);
+      return [];
     }
   };
 
   const findNearestStore = (
     point: [number, number],
-    stores: {
-      features: Array<StoreFeature>;
-    }
+    stores: { features: StoreFeature[] }
   ): [number, number] => {
-    let nearestStore: [number, number] | null = null;
+    let nearest = point;
     let minDistance = Infinity;
 
-    stores.features.forEach((store: StoreFeature) => {
+    stores.features.forEach((store) => {
       const storeCoords = store.geometry.coordinates;
       const distance = turf.distance(
         turf.point(point),
@@ -91,60 +97,61 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
       );
       if (distance < minDistance) {
         minDistance = distance;
-        nearestStore = storeCoords;
+        nearest = storeCoords;
       }
     });
 
-    return nearestStore || point;
+    return nearest;
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const initialize = async () => {
-      const [tractsResponse, storesResponse, csvData] = await Promise.all([
+      const [tractsRes, storesRes, csvRes] = await Promise.all([
         fetch("/data/Census_Tracts_in_2020.geojson"),
         fetch("/data/Grocery_Store_Locations.geojson"),
-        fetch("/data/cleaned_census_tracts.csv").then((res) => res.text()),
+        fetch("/data/cleaned_census_tracts.csv"),
       ]);
 
-      const tracts = await tractsResponse.json();
-      const stores = await storesResponse.json();
-      const csvJson = Papa.parse(csvData, { header: true }).data as {
+      const [tracts, stores, csvText] = await Promise.all([
+        tractsRes.json(),
+        storesRes.json(),
+        csvRes.text(),
+      ]);
+
+      const csvData = Papa.parse(csvText, { header: true }).data as Array<{
         GEOID: string;
         pop_percent: string;
-      }[];
+      }>;
 
-      const popPercentMap = new Map<string, number>();
-      csvJson.forEach((row) => {
-        popPercentMap.set(row.GEOID, parseFloat(row.pop_percent));
-      });
+      const popMap = new Map(
+        csvData.map((row) => [row.GEOID, parseFloat(row.pop_percent)])
+      );
 
-      const newPeople: Person[] = [];
-      const totalPeopleToCreate = 200;
+      const people: Person[] = [];
+      const TOTAL_PEOPLE = 100; // Reduced for better rate limit handling
 
-      // Create all people first
-      for (const tract of tracts.features) {
-        const tractId = tract.properties.GEOID;
-        const popPercent = popPercentMap.get(tractId) || 0;
-        const tractPeople = Math.round(popPercent * totalPeopleToCreate);
+      // Create markers first
+      tracts.features.forEach(
+        (tract: {
+          properties: { GEOID: string };
+          geometry: turf.AllGeoJSON;
+        }) => {
+          const tractId = tract.properties.GEOID;
+          const population = Math.round(
+            (popMap.get(tractId) || 0) * TOTAL_PEOPLE
+          );
 
-        if (tractPeople === 0) continue;
+          for (let i = 0; i < population && people.length < TOTAL_PEOPLE; i++) {
+            const home = turf.randomPoint(1, {
+              bbox: turf.bbox(tract.geometry),
+            }).features[0].geometry.coordinates as [number, number];
 
-        for (
-          let i = 0;
-          i < tractPeople && newPeople.length < totalPeopleToCreate;
-          i++
-        ) {
-          const point = turf.randomPoint(1, {
-            bbox: turf.bbox(tract.geometry),
-          });
-          const home = point.features[0].geometry.coordinates as [
-            number,
-            number
-          ];
-          const targetStore = findNearestStore(home, stores);
+            const targetStore = findNearestStore(home, stores);
 
-          const el = document.createElement("div");
-          el.style.cssText = `
+            const el = document.createElement("div");
+            el.style.cssText = `
             width: 12px;
             height: 12px;
             background-color: #2ecc71;
@@ -153,84 +160,81 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
             box-shadow: 0 0 3px rgba(0,0,0,0.5);
           `;
 
-          const marker = new mapboxgl.Marker(el).setLngLat(home).addTo(map);
+            const marker = new mapboxgl.Marker(el).setLngLat(home).addTo(map);
 
-          newPeople.push({
-            id: `person-${newPeople.length}`,
-            marker,
-            home,
-            targetStore,
-            progress: Math.random(),
-            isReturning: Math.random() > 0.5,
-            route: [home, targetStore],
-            tractId,
-          });
+            people.push({
+              id: `person-${people.length}`,
+              marker,
+              home,
+              targetStore,
+              progress: Math.random(),
+              isReturning: Math.random() > 0.5,
+              route: [],
+              tractId,
+            });
+          }
         }
-      }
+      );
 
-      // Load routes sequentially with delay
-      for (const person of newPeople) {
+      // Load routes sequentially
+      for (const person of people) {
+        if (!mounted) break;
         try {
-          person.route = await getRoute(person.home, person.targetStore);
-        } catch (error) {
-          console.error("Route loading error:", error);
+          const route = await getRoute(person.home, person.targetStore);
+          if (route.length > 1) {
+            person.route = route;
+          } else {
+            person.marker.remove();
+          }
+        } catch (err) {
+          console.error("Routing error for person:", person.id, err);
+          person.marker.remove();
         }
+        await new Promise((resolve) => setTimeout(resolve, 300));
       }
 
-      peopleRef.current = newPeople;
-      console.log("Initialization complete - starting animation");
+      peopleRef.current = people.filter((p) => p.route.length > 1);
+      startAnimation();
+    };
 
-      // Animation loop
+    const startAnimation = () => {
       const animate = () => {
-        if (!isMountedRef.current) return;
+        if (!mounted) return;
 
-        const currentPeople = peopleRef.current;
+        peopleRef.current.forEach((person) => {
+          const route = person.isReturning
+            ? [...person.route].reverse()
+            : person.route;
 
-        currentPeople.forEach((person) => {
-          try {
-            if (person.route.length < 2) return;
+          if (route.length < 2) return;
 
-            const route = person.isReturning
-              ? [...person.route].reverse()
-              : person.route;
+          const line = turf.lineString(route);
+          const distance = turf.length(line);
+          const position = turf.along(line, person.progress * distance).geometry
+            .coordinates as [number, number];
 
-            const line = turf.lineString(route);
-            const distance = turf.length(line);
-            const currentPosition = turf.along(
-              line,
-              person.progress * distance
-            );
+          person.marker.setLngLat(position);
 
-            person.marker.setLngLat(
-              currentPosition.geometry.coordinates as [number, number]
-            );
-
-            const newProgress = person.progress + 0.01; // Faster movement
-            if (newProgress >= 1) {
-              person.progress = 0;
-              person.isReturning = !person.isReturning;
-            } else {
-              person.progress = newProgress;
-            }
-          } catch (error) {
-            console.error("Animation error:", error);
+          person.progress += 0.02;
+          if (person.progress >= 1) {
+            person.progress = 0;
+            person.isReturning = !person.isReturning;
           }
         });
 
-        animationFrameRef.current = requestAnimationFrame(animate);
+        setForceUpdate((prev) => prev + 1); // Force re-render
+        animationRef.current = requestAnimationFrame(animate);
       };
 
-      animate();
+      animationRef.current = requestAnimationFrame(animate);
     };
 
     initialize();
 
     return () => {
-      isMountedRef.current = false;
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      peopleRef.current.forEach((person) => person.marker.remove());
+      mounted = false;
+      cancelAnimationFrame(animationRef.current);
+      peopleRef.current.forEach((p) => p.marker.remove());
     };
   }, [map]);
 
