@@ -4,7 +4,6 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { SimulationLayer } from "./SimulationLayer";
 
-// Add interface for grocery store properties
 interface GroceryStoreProperties {
   STORENAME: string;
   ADDRESS: string;
@@ -30,7 +29,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
   );
   const [mapLoaded, setMapLoaded] = useState(false);
 
-  // Weather effect functions
+  // Weather effect helper functions
   const addRainEffect = (map: mapboxgl.Map) => {
     map.setFog({
       range: [0.5, 10],
@@ -94,52 +93,47 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
 
         if (map.current || !mapContainer.current) return;
 
+        // Create the Mapbox map
         map.current = new mapboxgl.Map({
           container: mapContainer.current,
           style: "mapbox://styles/mapbox/streets-v12",
           center: [lng, lat],
           zoom: zoom,
-          //maxBounds: DC_BOUNDS,
         });
 
         map.current.on("load", () => {
           if (!map.current) return;
 
-          // Hide specific POI layers
+          // Hide extraneous POI layers
           const poiLayersToHide: string[] = [
-            "poi-label-4", // Major POI labels
-            "poi-label-3", // Medium POI labels
-            "poi-label-2", // Minor POI labels
-            "poi-label-1", // Smallest POI labels
-            "airport-label", // Airport labels
-            "settlement-major-label", // City labels
-            "settlement-minor-label", // Town labels
-            "settlement-subdivision-label", // Neighborhood labels
-            "natural-point-label", // Natural feature labels
-            "transit-label", // Transit station labels
-            "place-label", // Named places
-            "water-point-label", // Water feature labels
-            "water-line-label", // Water way labels
-            "building-label", // Building labels
+            "poi-label-4",
+            "poi-label-3",
+            "poi-label-2",
+            "poi-label-1",
+            "airport-label",
+            "settlement-major-label",
+            "settlement-minor-label",
+            "settlement-subdivision-label",
+            "natural-point-label",
+            "transit-label",
+            "place-label",
+            "water-point-label",
+            "water-line-label",
+            "building-label",
           ];
-
           poiLayersToHide.forEach((layerId: string) => {
-            if (map.current) {
-              // Check if the layer exists before trying to modify it
-              if (map.current.getLayer(layerId)) {
-                map.current.setLayoutProperty(layerId, "visibility", "none");
-              }
+            if (map.current?.getLayer(layerId)) {
+              map.current?.setLayoutProperty(layerId, "visibility", "none");
             }
           });
 
-          // Add 3D terrain (only once)
+          // Add 3D terrain
           map.current.addSource("mapbox-dem", {
             type: "raster-dem",
             url: "mapbox://mapbox.mapbox-terrain-dem-v1",
             tileSize: 512,
             maxzoom: 14,
           });
-
           map.current.setTerrain({
             source: "mapbox-dem",
             exaggeration: 1.5,
@@ -191,7 +185,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             },
           });
 
-          // Load both data sources
+          // Fetch geojson data + CSV for tract data
           Promise.all([
             fetch("/data/Census_Tracts_in_2020.geojson").then((res) =>
               res.json()
@@ -199,14 +193,15 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             fetch("/data/cleaned_census_tracts.csv").then((res) => res.text()),
           ]).then(([geojsonData, csvText]) => {
             // Parse CSV
-            const csvRows = csvText.split("\n").slice(1); // Skip header
+            const csvRows = csvText.split("\n").slice(1); // skip header row
+
             const censusData: {
               [key: string]: { total_pop: number; pop_percent: number };
             } = {};
 
             csvRows.forEach((row) => {
               const columns = row.split(",");
-              if (columns.length < 3) return;
+              if (columns.length < 5) return;
 
               const geoid = columns[2];
               censusData[geoid] = {
@@ -215,7 +210,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               };
             });
 
-            // Join data
+            // Merge CSV data into GeoJSON
             geojsonData.features = geojsonData.features.map(
               (feature: GeoJSON.Feature) => {
                 const geoid = feature.properties?.GEOID;
@@ -229,7 +224,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               }
             );
 
-            // Add source with joined data
+            // Add source for neighborhoods with joined data
             if (!map.current) return;
 
             map.current.addSource("neighborhood-data", {
@@ -237,7 +232,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               data: geojsonData,
             });
 
-            // Add two layers: one for hover interaction (invisible fill) and one for borders
+            // Invisible fill layer for hover / click
             map.current.addLayer({
               id: "neighborhood-fills",
               type: "fill",
@@ -250,7 +245,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               filter: ["!=", ["get", "TRACT"], ""],
             });
 
-            // Add a separate layer for visible boundaries
+            // A separate line layer for visible boundaries
             map.current.addLayer({
               id: "neighborhood-borders",
               type: "line",
@@ -263,7 +258,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               filter: ["!=", ["get", "TRACT"], ""],
             });
 
-            // Updated weather controls with active state
+            // Weather buttons
             const weatherControls = document.createElement("div");
             weatherControls.className = "absolute top-4 right-4 flex gap-2";
 
@@ -289,13 +284,14 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
                     addSnowEffect(map.current);
                     break;
                   case "clear":
+                  default:
                     clearWeather(map.current);
                     break;
                 }
 
-                // Update all buttons' styles
+                // Re-style buttons
                 weatherControls.querySelectorAll("button").forEach((btn) => {
-                  if (btn.textContent === text) {
+                  if ((btn as HTMLButtonElement).textContent === text) {
                     btn.className =
                       "px-4 py-2 rounded-lg shadow-lg bg-blue-500 text-white hover:bg-blue-600";
                   } else {
@@ -310,16 +306,14 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             weatherControls.appendChild(createButton("Clear", "clear"));
             weatherControls.appendChild(createButton("Rain", "rain"));
             weatherControls.appendChild(createButton("Snow", "snow"));
-
             mapContainer.current?.appendChild(weatherControls);
 
-            // Add food access areas source
+            // Low food access areas
             map.current.addSource("food-access", {
               type: "geojson",
               data: "/data/Low_Food_Access_Areas.geojson",
             });
 
-            // Add food access areas layer
             map.current.addLayer({
               id: "food-access-areas",
               type: "fill",
@@ -345,7 +339,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               },
             });
 
-            // Update hover event
+            // Neighborhood hover popups
             map.current.on(
               "mousemove",
               "neighborhood-fills",
@@ -356,7 +350,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               ) => {
                 if (!e.features?.length || !map.current) return;
 
-                // Remove existing popups
+                // Clear old popups
                 const existingPopups =
                   document.getElementsByClassName("census-tract-popup");
                 while (existingPopups[0]) {
@@ -371,7 +365,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
                   ? (feature.properties.pop_percent * 100).toFixed(2)
                   : "0.00";
 
-                // Create new popup
+                // New popup
                 new mapboxgl.Popup({
                   closeButton: false,
                   closeOnClick: false,
@@ -389,23 +383,20 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             );
 
             map.current.on("mouseleave", "neighborhood-fills", () => {
-              if (map.current) {
-                const popups =
-                  document.getElementsByClassName("census-tract-popup");
-                while (popups[0]) {
-                  popups[0].remove();
-                }
+              if (!map.current) return;
+              const popups =
+                document.getElementsByClassName("census-tract-popup");
+              while (popups[0]) {
+                popups[0].remove();
               }
             });
 
-            // Change cursor to pointer when hovering over tracts
             map.current.on("mouseenter", "neighborhood-fills", () => {
-              if (map.current) {
-                map.current.getCanvas().style.cursor = "pointer";
-              }
+              if (!map.current) return;
+              map.current.getCanvas().style.cursor = "pointer";
             });
 
-            // Add legend
+            // Legend
             const legend = document.createElement("div");
             legend.className = "legend";
             legend.innerHTML = `
@@ -417,13 +408,12 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             `;
             map.current.getContainer().appendChild(legend);
 
-            // Add grocery stores source
+            // Grocery stores
             map.current.addSource("grocery-stores", {
               type: "geojson",
               data: "/data/Grocery_Store_Locations.geojson",
             });
 
-            // Add grocery stores layer as circles instead of icons
             map.current.addLayer({
               id: "grocery-stores",
               type: "circle",
@@ -438,7 +428,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               filter: ["==", "PRESENT24", "Yes"],
             });
 
-            // Add popup for grocery stores
+            // Grocery store popup
             map.current.on("click", "grocery-stores", (e) => {
               if (!map.current || !e.features?.length) return;
 
@@ -465,25 +455,81 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               new mapboxgl.Popup()
                 .setLngLat(coordinates as [number, number])
                 .setHTML(description)
-                .addTo(map.current!);
+                .addTo(map.current);
             });
 
-            // Change cursor on hover
             map.current.on("mouseenter", "grocery-stores", () => {
-              if (map.current) {
-                map.current.getCanvas().style.cursor = "pointer";
-              }
+              if (!map.current) return;
+              map.current.getCanvas().style.cursor = "pointer";
             });
 
             map.current.on("mouseleave", "grocery-stores", () => {
-              if (map.current) {
-                map.current.getCanvas().style.cursor = "";
-              }
+              if (!map.current) return;
+              map.current.getCanvas().style.cursor = "";
             });
 
             console.log("Map loaded, adding simulation layer");
             setMapLoaded(true);
           });
+
+          // DRAG AND DROP handlers for adding new grocery stores
+          const handleDragOver = (e: DragEvent) => {
+            e.preventDefault();
+          };
+
+          const handleDrop = async (e: DragEvent) => {
+            e.preventDefault();
+            if (!map.current) return;
+
+            // Convert screen coords to map coords
+            const point = map.current.unproject([e.clientX, e.clientY]);
+
+            // Grab the "grocery-stores" source
+            const source = map.current.getSource(
+              "grocery-stores"
+            ) as mapboxgl.GeoJSONSource;
+            if (!source) return;
+
+            let currentData: GeoJSON.FeatureCollection;
+            if (typeof source._data === "string") {
+              // If it's still the URL, fetch the real data
+              const response = await fetch(source._data);
+              currentData = await response.json();
+            } else {
+              currentData = source._data as GeoJSON.FeatureCollection;
+            }
+
+            // Ensure features array
+            if (!currentData.features) {
+              currentData.features = [];
+            }
+
+            // Create new store feature
+            const newFeature: GeoJSON.Feature = {
+              type: "Feature",
+              geometry: {
+                type: "Point",
+                coordinates: [point.lng, point.lat],
+              },
+              properties: {
+                PRESENT24: "Yes",
+                STORENAME: "New Store",
+                ADDRESS: "Added via Drag & Drop",
+                ZIPCODE: 20001,
+                PHONE: null,
+                WARD: "",
+                NOTES: "Custom store",
+              },
+            };
+
+            currentData.features.push(newFeature);
+            source.setData(currentData);
+          };
+
+          // Add event listeners
+          const canvas = map.current.getCanvas();
+          canvas.addEventListener("dragover", handleDragOver);
+          canvas.addEventListener("drop", handleDrop);
         });
       } catch (error) {
         console.error("Error initializing map:", error);
@@ -492,8 +538,14 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
 
     initializeMap();
 
+    // Cleanup on unmount
     return () => {
-      if (map.current) map.current.remove();
+      if (map.current) {
+        const canvas = map.current.getCanvas();
+        canvas.removeEventListener("dragover", () => {});
+        canvas.removeEventListener("drop", () => {});
+        map.current.remove();
+      }
     };
   }, [lng, lat, zoom, weatherType, mapboxToken]);
 
