@@ -2,11 +2,23 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 
-const MapboxMap = () => {
+// Define the type for our GeoJSON feature properties
+interface NeighborhoodProperties {
+  NAME: string;
+  NBH_NAMES: string;
+  // Add other specific properties you need from your GeoJSON
+  OBJECTID?: number;
+  Shape_Area?: number;
+  Shape_Length?: number;
+  [key: string]: string | number | undefined; // for any remaining string or number properties
+}
+
+export default function MapboxMap() {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const [zoom, setZoom] = useState(14);
-  const [pitch, setPitch] = useState(0);
+  const [lng] = useState(-77.0369);
+  const [lat] = useState(38.9072);
+  const [zoom] = useState(11);
 
   useEffect(() => {
     const initializeMap = async () => {
@@ -19,43 +31,79 @@ const MapboxMap = () => {
 
         map.current = new mapboxgl.Map({
           container: mapContainer.current as HTMLElement,
-          style: "mapbox://styles/mapbox/streets-v12",
-          center: [-77.0369, 38.9072],
+          style: "mapbox://styles/mapbox/light-v11",
+          center: [lng, lat],
           zoom: zoom,
-          pitch: pitch,
-          bearing: 0,
           antialias: true,
         });
 
         map.current.on("load", () => {
           if (!map.current) return;
 
-          map.current.addSource("mapbox-dem", {
-            type: "raster-dem",
-            url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-            tileSize: 512,
-            maxzoom: 14,
+          // Add the GeoJSON source
+          map.current.addSource("neighborhoods", {
+            type: "geojson",
+            data: "/data/Neighborhood_Clusters.geojson",
           });
 
-          map.current.setTerrain({
-            source: "mapbox-dem",
-            exaggeration: 1.5,
-          });
-
+          // Add a layer showing the neighborhood boundaries
           map.current.addLayer({
-            id: "sky",
-            type: "sky",
+            id: "neighborhood-borders",
+            type: "line",
+            source: "neighborhoods",
+            layout: {},
             paint: {
-              "sky-type": "atmosphere",
-              "sky-atmosphere-sun": [0.0, 0.0],
-              "sky-atmosphere-sun-intensity": 15,
+              "line-color": "#627BC1",
+              "line-width": 2,
             },
           });
 
-          map.current.setFog({
-            range: [0.8, 8],
-            color: "white",
-            "horizon-blend": 0.5,
+          // Add a layer for the neighborhood fills
+          map.current.addLayer({
+            id: "neighborhood-fills",
+            type: "fill",
+            source: "neighborhoods",
+            layout: {},
+            paint: {
+              "fill-color": "#627BC1",
+              "fill-opacity": 0.1,
+            },
+          });
+
+          // Add hover effect
+          map.current.on("mouseenter", "neighborhood-fills", () => {
+            if (!map.current) return;
+            map.current.getCanvas().style.cursor = "pointer";
+          });
+
+          map.current.on("mouseleave", "neighborhood-fills", () => {
+            if (!map.current) return;
+            map.current.getCanvas().style.cursor = "";
+          });
+
+          // Add popup on click
+          map.current.on("click", "neighborhood-fills", (e) => {
+            if (!map.current || !e.features?.length) return;
+
+            const feature = e.features[0] as mapboxgl.MapboxGeoJSONFeature & {
+              properties: NeighborhoodProperties;
+            };
+
+            if (!feature.properties) return;
+
+            new mapboxgl.Popup()
+              .setLngLat(e.lngLat)
+              .setHTML(
+                `
+                <h3 style="font-weight: bold; margin-bottom: 5px;">${
+                  feature.properties.NAME || "Unknown"
+                }</h3>
+                <p>${
+                  feature.properties.NBH_NAMES || "No neighborhoods listed"
+                }</p>
+              `
+              )
+              .addTo(map.current);
           });
         });
       } catch (error) {
@@ -68,71 +116,11 @@ const MapboxMap = () => {
     return () => {
       if (map.current) map.current.remove();
     };
-  }, []);
-
-  const handleZoomIn = () => {
-    if (!map.current) return;
-    map.current.zoomIn();
-    setZoom(map.current.getZoom());
-  };
-
-  const handleZoomOut = () => {
-    if (!map.current) return;
-    map.current.zoomOut();
-    setZoom(map.current.getZoom());
-  };
-
-  const handleTiltUp = () => {
-    if (!map.current) return;
-    const newPitch = Math.min(map.current.getPitch() + 10, 85);
-    map.current.setPitch(newPitch);
-    setPitch(newPitch);
-  };
-
-  const handleTiltDown = () => {
-    if (!map.current) return;
-    const newPitch = Math.max(map.current.getPitch() - 10, 0);
-    map.current.setPitch(newPitch);
-    setPitch(newPitch);
-  };
+  }, [lng, lat, zoom]);
 
   return (
     <div className="relative h-full w-full">
       <div ref={mapContainer} className="h-full w-full" />
-
-      {/* Control buttons - adjusted position for full screen */}
-      <div className="absolute bottom-8 right-8 flex flex-col gap-2">
-        <div className="flex gap-2">
-          <button
-            onClick={handleZoomIn}
-            className="bg-white p-2 rounded-lg shadow-lg hover:bg-gray-100"
-          >
-            Zoom +
-          </button>
-          <button
-            onClick={handleZoomOut}
-            className="bg-white p-2 rounded-lg shadow-lg hover:bg-gray-100"
-          >
-            Zoom -
-          </button>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleTiltUp}
-            className="bg-white p-2 rounded-lg shadow-lg hover:bg-gray-100"
-          >
-            Tilt ↑
-          </button>
-          <button
-            onClick={handleTiltDown}
-            className="bg-white p-2 rounded-lg shadow-lg hover:bg-gray-100"
-          >
-            Tilt ↓
-          </button>
-        </div>
-      </div>
     </div>
   );
-};
-
-export default MapboxMap;
+}
