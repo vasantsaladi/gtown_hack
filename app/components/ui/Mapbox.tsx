@@ -15,7 +15,11 @@ interface GroceryStoreProperties {
   PRESENT24: string;
 }
 
-export default function MapboxMap() {
+interface MapboxProps {
+  mapboxToken: string;
+}
+
+export function Mapbox({ mapboxToken }: MapboxProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [lng] = useState(-77.0369);
@@ -24,6 +28,7 @@ export default function MapboxMap() {
   const [weatherType, setWeatherType] = useState<"clear" | "rain" | "snow">(
     "clear"
   );
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   // Weather effect functions
   const addRainEffect = (map: mapboxgl.Map) => {
@@ -85,9 +90,7 @@ export default function MapboxMap() {
   useEffect(() => {
     const initializeMap = async () => {
       try {
-        const response = await fetch("/api/mapbox-token");
-        const { token } = await response.json();
-        mapboxgl.accessToken = token;
+        mapboxgl.accessToken = mapboxToken;
 
         if (map.current || !mapContainer.current) return;
 
@@ -226,15 +229,6 @@ export default function MapboxMap() {
             },
             filter: ["!=", ["get", "TRACT"], ""],
           });
-
-          // Enhanced atmosphere effect
-          //   map.current.setFog({
-          //     color: "rgb(220, 230, 240)", // Lighter lower atmosphere
-          //     "high-color": "rgb(150, 180, 220)", // Softer upper atmosphere
-          //     "horizon-blend": 0.1,
-          //     "space-color": "rgb(25, 35, 60)",
-          //     "star-intensity": 0.15,
-          //   });
 
           // Updated weather controls with active state
           const weatherControls = document.createElement("div");
@@ -482,6 +476,9 @@ export default function MapboxMap() {
               });
             }
           });
+
+          console.log("Map loaded, adding simulation layer");
+          setMapLoaded(true);
         });
       } catch (error) {
         console.error("Error initializing map:", error);
@@ -493,12 +490,14 @@ export default function MapboxMap() {
     return () => {
       if (map.current) map.current.remove();
     };
-  }, [lng, lat, zoom, weatherType]);
+  }, [lng, lat, zoom, weatherType, mapboxToken]);
 
   return (
     <div className="relative h-full w-full">
       <div ref={mapContainer} className="h-full w-full" />
-      {map.current && <SimulationLayer map={map.current} />}
+      {mapLoaded && map.current && (
+        <SimulationLayer key="simulation-layer" map={map.current} />
+      )}
     </div>
   );
 }
