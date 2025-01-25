@@ -4,28 +4,6 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { SimulationLayer } from "./SimulationLayer";
 
-// Define the type for our GeoJSON feature properties
-interface NeighborhoodProperties {
-  NAME: string;
-  NBH_NAMES: string;
-  // Add other specific properties you need from your GeoJSON
-  OBJECTID?: number;
-  Shape_Area?: number;
-  Shape_Length?: number;
-  [key: string]: string | number | undefined; // for any remaining string or number properties
-}
-
-// Add interface for food access properties
-interface FoodAccessProperties {
-  PARTPOP2: number;
-  PRTOVR185: number;
-  PRTUND185: number;
-  PERCENTUND185: number;
-  GIS_ID: string;
-  GLOBALID: string;
-  OBJECTID: number;
-}
-
 // Add interface for grocery store properties
 interface GroceryStoreProperties {
   STORENAME: string;
@@ -220,120 +198,43 @@ export default function MapboxMap() {
           // Add the GeoJSON source
           map.current.addSource("neighborhoods", {
             type: "geojson",
-            data: "/data/Neighborhood_Clusters.geojson",
+            data: "/data/Census_Tracts_in_2020.geojson",
           });
 
-          // Add neighborhood boundaries
-          map.current.addLayer({
-            id: "neighborhood-borders",
-            type: "line",
-            source: "neighborhoods",
-            layout: {},
-            paint: {
-              "line-color": "#4264fb",
-              "line-width": 2,
-              "line-opacity": 0.8,
-            },
-          });
-
-          // Add neighborhood fills
+          // Add two layers: one for hover interaction (invisible fill) and one for borders
           map.current.addLayer({
             id: "neighborhood-fills",
             type: "fill",
             source: "neighborhoods",
-            layout: {},
             paint: {
-              "fill-color": [
-                "match",
-                ["get", "NAME"],
-                [
-                  "Cluster 44",
-                  "Cluster 39",
-                  "Cluster 43",
-                  "Cluster 37",
-                  "Cluster 38",
-                  "Cluster 36",
-                  "Cluster 28",
-                  "Cluster 34",
-                  "Cluster 35",
-                  "Cluster 32",
-                  "Cluster 30",
-                  "Cluster 33",
-                  "Cluster 29",
-                  "Cluster 31",
-                ],
-                "red",
-                "rgba(0, 0, 0, 0.1)", // Default color
-              ],
-              "fill-opacity": 0.5,
+              "fill-color": "#627BC1",
+              "fill-opacity": 0,
+              "fill-outline-color": "#627BC1",
             },
+            filter: ["!=", ["get", "TRACT"], ""],
+          });
+
+          // Add a separate layer for visible boundaries
+          map.current.addLayer({
+            id: "neighborhood-borders",
+            type: "line",
+            source: "neighborhoods",
+            paint: {
+              "line-color": "#627BC1",
+              "line-width": 1,
+              "line-opacity": 0.8,
+            },
+            filter: ["!=", ["get", "TRACT"], ""],
           });
 
           // Enhanced atmosphere effect
-          map.current.setFog({
-            color: "rgb(220, 230, 240)", // Lighter lower atmosphere
-            "high-color": "rgb(150, 180, 220)", // Softer upper atmosphere
-            "horizon-blend": 0.1,
-            "space-color": "rgb(25, 35, 60)",
-            "star-intensity": 0.15,
-          });
-
-          // Add hover effect
-          map.current.on("mouseenter", "neighborhood-fills", () => {
-            if (!map.current) return;
-            map.current.getCanvas().style.cursor = "pointer";
-
-            // Highlight hovered neighborhood
-            map.current.setPaintProperty("neighborhood-fills", "fill-opacity", [
-              "case",
-              ["boolean", ["feature-state", "hover"], false],
-              0.4,
-              0.2,
-            ]);
-          });
-
-          map.current.on("mouseleave", "neighborhood-fills", () => {
-            if (!map.current) return;
-            map.current.getCanvas().style.cursor = "";
-            map.current.setPaintProperty(
-              "neighborhood-fills",
-              "fill-opacity",
-              0.2
-            );
-          });
-
-          // Add popup on click
-          map.current.on(
-            "click",
-            "neighborhood-fills",
-            (
-              e: mapboxgl.MapMouseEvent & {
-                features?: mapboxgl.MapboxGeoJSONFeature[];
-              }
-            ) => {
-              if (!map.current || !e.features?.length) return;
-
-              const feature = e.features[0] as mapboxgl.MapboxGeoJSONFeature & {
-                properties: NeighborhoodProperties;
-              };
-
-              if (!feature.properties) return;
-
-              new mapboxgl.Popup()
-                .setLngLat(e.lngLat)
-                .setHTML(
-                  `
-                <h3 style="font-weight: bold; margin-bottom: 5px;">${
-                  feature.properties.NAME || "Unknown"
-                }</h3>
-                <p>${
-                  feature.properties.NBH_NAMES || "No neighborhoods listed"
-                }</p>
-              `
-                )
-                .addTo(map.current);
-            }
-          );
+          //   map.current.setFog({
+          //     color: "rgb(220, 230, 240)", // Lighter lower atmosphere
+          //     "high-color": "rgb(150, 180, 220)", // Softer upper atmosphere
+          //     "horizon-blend": 0.1,
+          //     "space-color": "rgb(25, 35, 60)",
+          //     "star-intensity": 0.15,
+          //   });
 
           // Updated weather controls with active state
           const weatherControls = document.createElement("div");
@@ -417,32 +318,58 @@ export default function MapboxMap() {
             },
           });
 
-          // Add hover effect
-          const popup = new mapboxgl.Popup({
-            closeButton: false,
-            closeOnClick: false,
-          });
+          // Add hover effect for census tracts
+          map.current.on(
+            "mousemove",
+            "neighborhood-fills",
+            (
+              e: mapboxgl.MapMouseEvent & {
+                features?: mapboxgl.MapboxGeoJSONFeature[];
+              }
+            ) => {
+              if (!e.features?.length) return;
 
-          map.current.on("mousemove", "food-access-areas", (e) => {
-            if (e.features && e.features.length > 0 && map.current) {
+              // Remove any existing popups first
+              const existingPopups =
+                document.getElementsByClassName("mapboxgl-popup");
+              Array.from(existingPopups).forEach((popup) => popup.remove());
+
               const feature = e.features[0];
-              const properties = feature.properties as FoodAccessProperties;
+              const properties = feature.properties as { TRACT: string };
+              const tractNumber = properties.TRACT;
 
-              const description = `
-                <strong>Food Access Area</strong><br>
-                Total Population: ${properties.PARTPOP2}<br>
-                Population Under 185% Poverty: ${properties.PRTUND185}<br>
-                Percentage Under 185% Poverty: ${(
-                  properties.PERCENTUND185 * 100
-                ).toFixed(1)}%
-              `;
-
-              popup.setLngLat(e.lngLat).setHTML(description).addTo(map.current);
+              if (map.current) {
+                new mapboxgl.Popup({
+                  closeButton: false,
+                  closeOnClick: false,
+                })
+                  .setLngLat(e.lngLat)
+                  .setHTML(
+                    `
+                    <div class="p-2">
+                      <p class="font-medium">Tract: ${tractNumber}</p>
+                    </div>
+                  `
+                  )
+                  .addTo(map.current);
+              }
             }
+          );
+
+          // Remove popup when mouse leaves the layer
+          map.current.on("mouseleave", "neighborhood-fills", () => {
+            if (map.current) {
+              map.current.getCanvas().style.cursor = "";
+            }
+            const popups = document.getElementsByClassName("mapboxgl-popup");
+            if (popups[0]) popups[0].remove();
           });
 
-          map.current.on("mouseleave", "food-access-areas", () => {
-            popup.remove();
+          // Change cursor to pointer when hovering over tracts
+          map.current.on("mouseenter", "neighborhood-fills", () => {
+            if (map.current) {
+              map.current.getCanvas().style.cursor = "pointer";
+            }
           });
 
           // Add legend

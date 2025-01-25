@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { SpatialIndex } from "@/lib/spatialIndex";
 import { Feature, Point } from "geojson";
@@ -29,11 +29,6 @@ interface StoreFeature extends Feature<Point> {
     STORENAME: string;
     [key: string]: unknown;
   };
-}
-
-interface GeoJSONResponse {
-  type: "FeatureCollection";
-  features: StoreFeature[];
 }
 
 export function SimulationLayer({ map }: SimulationLayerProps) {
@@ -112,7 +107,7 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
         // Initialize spatial index
         spatialIndexRef.current = new SpatialIndex(
-          storesData.features.map((store: any) => ({
+          storesData.features.map((store: StoreFeature) => ({
             type: "Feature",
             geometry: store.geometry,
             properties: { ...store.properties, id: store.properties.STORENAME },
@@ -187,7 +182,7 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
       }
       people.forEach((person) => person.marker.remove());
     };
-  }, [map]);
+  }, [map, people]);
 
   return null;
 }
