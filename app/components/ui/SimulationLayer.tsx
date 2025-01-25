@@ -29,47 +29,45 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
   const animationFrameRef = useRef<number | null>(null);
   const peopleRef = useRef<Person[]>([]);
   const routeCacheRef = useRef<Map<string, [number, number][]>>(new Map());
-  const rateLimitTimeoutRef = useRef<number>(0);
+  const lastRequestTimeRef = useRef<number>(0);
+  const isMountedRef = useRef(true);
 
   const getRoute = async (
     start: [number, number],
     end: [number, number]
   ): Promise<[number, number][]> => {
     const cacheKey = `${start.join(",")}-${end.join(",")}`;
+    const reverseKey = `${end.join(",")}-${start.join(",")}`;
 
-    if (routeCacheRef.current.has(cacheKey)) {
+    if (routeCacheRef.current.has(cacheKey))
       return routeCacheRef.current.get(cacheKey)!;
-    }
+    if (routeCacheRef.current.has(reverseKey))
+      return [...routeCacheRef.current.get(reverseKey)!].reverse();
 
-    // Check rate limit timeout
     const now = Date.now();
-    if (now < rateLimitTimeoutRef.current) {
-      return [start, end];
-    }
+    const timeSinceLast = now - lastRequestTimeRef.current;
+    const delay = Math.max(300 - timeSinceLast, 0); // 300ms between requests
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
 
     try {
-      // Add delay between requests to avoid rate limits
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      const query = await fetch(
+      lastRequestTimeRef.current = Date.now();
+      const response = await fetch(
         `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${mapboxgl.accessToken}`
       );
 
-      if (query.status === 429) {
-        // Set a timeout for 1 minute when rate limit is hit
-        rateLimitTimeoutRef.current = now + 60000;
+      if (response.status === 429) {
+        console.log("Rate limited - using direct route");
         return [start, end];
       }
 
-      const json = await query.json();
+      const json = await response.json();
+      const route = json.routes?.[0]?.geometry?.coordinates || [start, end];
 
-      if (json.routes?.[0]?.geometry?.coordinates) {
-        const route = json.routes[0].geometry.coordinates;
-        routeCacheRef.current.set(cacheKey, route as [number, number][]);
-        return route as [number, number][];
-      }
+      routeCacheRef.current.set(cacheKey, route);
+      routeCacheRef.current.set(reverseKey, [...route].reverse());
 
-      return [start, end];
+      return route as [number, number][];
     } catch (error) {
       console.error("Route error:", error);
       return [start, end];
@@ -123,6 +121,7 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
       const newPeople: Person[] = [];
       const totalPeopleToCreate = 200;
 
+      // Create all people first
       for (const tract of tracts.features) {
         const tractId = tract.properties.GEOID;
         const popPercent = popPercentMap.get(tractId) || 0;
@@ -144,7 +143,6 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
           ];
           const targetStore = findNearestStore(home, stores);
 
-          // Create marker with larger green dot
           const el = document.createElement("div");
           el.style.cssText = `
             width: 12px;
@@ -164,72 +162,71 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
             targetStore,
             progress: Math.random(),
             isReturning: Math.random() > 0.5,
-            route: [home, targetStore], // Start with direct route
-            tractId: tract.properties.GEOID,
+            route: [home, targetStore],
+            tractId,
           });
         }
       }
 
-      console.log(`Created ${newPeople.length} people`);
-      peopleRef.current = newPeople;
-      animate();
-    };
-
-    const animate = () => {
-      peopleRef.current = peopleRef.current.map((person) => {
+      // Load routes sequentially with delay
+      for (const person of newPeople) {
         try {
-          // Only get new route if we're not rate limited
-          if (
-            (!person.route || person.route.length < 2) &&
-            Date.now() >= rateLimitTimeoutRef.current
-          ) {
-            getRoute(
-              person.isReturning ? person.targetStore : person.home,
-              person.isReturning ? person.home : person.targetStore
-            ).then((route) => {
-              person.route = route;
-            });
-          }
-
-          const route = person.isReturning
-            ? [...person.route].reverse()
-            : person.route;
-
-          const line = turf.lineString(route);
-          const currentPosition = turf.along(
-            line,
-            person.progress * turf.length(line)
-          );
-
-          person.marker.setLngLat(
-            currentPosition.geometry.coordinates as [number, number]
-          );
-
-          let newProgress = person.progress + 0.001;
-          let isReturning = person.isReturning;
-
-          if (newProgress >= 1) {
-            newProgress = 0;
-            isReturning = !isReturning;
-          }
-
-          return {
-            ...person,
-            progress: newProgress,
-            isReturning,
-          };
+          person.route = await getRoute(person.home, person.targetStore);
         } catch (error) {
-          console.error("Animation error for person:", person.id, error);
-          return person;
+          console.error("Route loading error:", error);
         }
-      });
+      }
 
-      animationFrameRef.current = requestAnimationFrame(animate);
+      peopleRef.current = newPeople;
+      console.log("Initialization complete - starting animation");
+
+      // Animation loop
+      const animate = () => {
+        if (!isMountedRef.current) return;
+
+        const currentPeople = peopleRef.current;
+
+        currentPeople.forEach((person) => {
+          try {
+            if (person.route.length < 2) return;
+
+            const route = person.isReturning
+              ? [...person.route].reverse()
+              : person.route;
+
+            const line = turf.lineString(route);
+            const distance = turf.length(line);
+            const currentPosition = turf.along(
+              line,
+              person.progress * distance
+            );
+
+            person.marker.setLngLat(
+              currentPosition.geometry.coordinates as [number, number]
+            );
+
+            const newProgress = person.progress + 0.01; // Faster movement
+            if (newProgress >= 1) {
+              person.progress = 0;
+              person.isReturning = !person.isReturning;
+            } else {
+              person.progress = newProgress;
+            }
+          } catch (error) {
+            console.error("Animation error:", error);
+          }
+        });
+
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
+
+      animate();
     };
 
     initialize();
 
     return () => {
+      isMountedRef.current = false;
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }

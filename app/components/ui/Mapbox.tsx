@@ -200,42 +200,48 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
 
           // Load both data sources
           Promise.all([
-            fetch('/data/Census_Tracts_in_2020.geojson').then(res => res.json()),
-            fetch('/data/cleaned_census_tracts.csv').then(res => res.text())
+            fetch("/data/Census_Tracts_in_2020.geojson").then((res) =>
+              res.json()
+            ),
+            fetch("/data/cleaned_census_tracts.csv").then((res) => res.text()),
           ]).then(([geojsonData, csvText]) => {
             // Parse CSV
-            const csvRows = csvText.split('\n').slice(1); // Skip header
-            const censusData: { [key: string]: { total_pop: number; pop_percent: number } } = {};
-            
-            csvRows.forEach(row => {
-              const columns = row.split(',');
+            const csvRows = csvText.split("\n").slice(1); // Skip header
+            const censusData: {
+              [key: string]: { total_pop: number; pop_percent: number };
+            } = {};
+
+            csvRows.forEach((row) => {
+              const columns = row.split(",");
               if (columns.length < 3) return;
-              
+
               const geoid = columns[2];
               censusData[geoid] = {
                 total_pop: parseInt(columns[4]),
-                pop_percent: parseFloat(columns[3])
+                pop_percent: parseFloat(columns[3]),
               };
             });
 
             // Join data
-            geojsonData.features = geojsonData.features.map((feature: GeoJSON.Feature) => {
-              const geoid = feature.properties?.GEOID;
-              if (censusData[geoid]) {
-                feature.properties = {
-                  ...feature.properties,
-                  ...censusData[geoid]
-                };
+            geojsonData.features = geojsonData.features.map(
+              (feature: GeoJSON.Feature) => {
+                const geoid = feature.properties?.GEOID;
+                if (censusData[geoid]) {
+                  feature.properties = {
+                    ...feature.properties,
+                    ...censusData[geoid],
+                  };
+                }
+                return feature;
               }
-              return feature;
-            });
+            );
 
             // Add source with joined data
             if (!map.current) return;
 
-            map.current.addSource('neighborhood-data', {
-              type: 'geojson', 
-              data: geojsonData
+            map.current.addSource("neighborhood-data", {
+              type: "geojson",
+              data: geojsonData,
             });
 
             // Add two layers: one for hover interaction (invisible fill) and one for borders
@@ -350,22 +356,28 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             map.current.on(
               "mousemove",
               "neighborhood-fills",
-              (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.MapboxGeoJSONFeature[] }) => {
+              (
+                e: mapboxgl.MapMouseEvent & {
+                  features?: mapboxgl.MapboxGeoJSONFeature[];
+                }
+              ) => {
                 if (!e.features?.length || !map.current) return;
-                
+
                 // Remove existing popups
-                const existingPopups = document.getElementsByClassName("census-tract-popup");
+                const existingPopups =
+                  document.getElementsByClassName("census-tract-popup");
                 while (existingPopups[0]) {
                   existingPopups[0].remove();
                 }
-                
+
                 const feature = e.features[0];
                 if (!feature.properties) return;
-                
+
                 const totalPop = feature.properties.total_pop || 0;
-                const popPercent = feature.properties.pop_percent ? 
-                  (feature.properties.pop_percent * 100).toFixed(2) : "0.00";
-                
+                const popPercent = feature.properties.pop_percent
+                  ? (feature.properties.pop_percent * 100).toFixed(2)
+                  : "0.00";
+
                 // Create new popup
                 new mapboxgl.Popup({
                   closeButton: false,
@@ -385,7 +397,8 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
 
             map.current.on("mouseleave", "neighborhood-fills", () => {
               if (map.current) {
-                const popups = document.getElementsByClassName("census-tract-popup");
+                const popups =
+                  document.getElementsByClassName("census-tract-popup");
                 while (popups[0]) {
                   popups[0].remove();
                 }
