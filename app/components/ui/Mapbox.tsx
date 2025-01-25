@@ -65,8 +65,13 @@ export default function MapboxMap() {
             source: "neighborhoods",
             layout: {},
             paint: {
-              "fill-color": "#627BC1",
-              "fill-opacity": 0.1,
+              "fill-color": [
+                'match',
+                ['get', 'NAME'],
+                'Cluster 44', 'red',  // Color Cluster 44 red
+                'rgba(0, 0, 0, 0.1)'  // Default color for all other clusters
+              ],
+              "fill-opacity": 0.5
             },
           });
 
