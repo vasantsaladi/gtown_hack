@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 
 // Define the type for our GeoJSON feature properties
 interface NeighborhoodProperties {
@@ -79,67 +80,6 @@ export default function MapboxMap() {
 
     map.setPaintProperty("sky", "sky-type", "atmosphere");
   };
-  const [zoom] = useState(12);
-  const [weatherType, setWeatherType] = useState<"clear" | "rain" | "snow">(
-    "clear"
-  );
-
-  // Weather effect functions
-  const addRainEffect = (map: mapboxgl.Map) => {
-    map.setFog({
-      range: [0.5, 10],
-      color: "rgb(186, 210, 235)",
-      "high-color": "rgb(36, 92, 223)",
-      "horizon-blend": 0.1,
-      "space-color": "rgb(11, 11, 25)",
-      "star-intensity": 0,
-    });
-
-    map.setPaintProperty("sky", "sky-type", "gradient");
-    map.setPaintProperty("sky", "sky-gradient", [
-      "interpolate",
-      ["linear"],
-      ["sky-radial-progress"],
-      0.8,
-      "rgba(37, 45, 58, 1)",
-      1,
-      "rgba(87, 95, 108, 1)",
-    ]);
-  };
-
-  const addSnowEffect = (map: mapboxgl.Map) => {
-    map.setFog({
-      range: [0.5, 7],
-      color: "rgb(255, 255, 255)",
-      "high-color": "rgb(255, 255, 255)",
-      "horizon-blend": 0.3,
-      "space-color": "rgb(200, 200, 210)",
-      "star-intensity": 0,
-    });
-
-    map.setPaintProperty("sky", "sky-type", "gradient");
-    map.setPaintProperty("sky", "sky-gradient", [
-      "interpolate",
-      ["linear"],
-      ["sky-radial-progress"],
-      0.8,
-      "rgba(230, 230, 230, 1)",
-      1,
-      "rgba(200, 200, 200, 1)",
-    ]);
-  };
-
-  const clearWeather = (map: mapboxgl.Map) => {
-    map.setFog({
-      color: "rgb(220, 230, 240)",
-      "high-color": "rgb(150, 180, 220)",
-      "horizon-blend": 0.1,
-      "space-color": "rgb(25, 35, 60)",
-      "star-intensity": 0.15,
-    });
-
-    map.setPaintProperty("sky", "sky-type", "atmosphere");
-  };
 
   useEffect(() => {
     const initializeMap = async () => {
@@ -151,12 +91,10 @@ export default function MapboxMap() {
         if (map.current || !mapContainer.current) return;
 
         map.current = new mapboxgl.Map({
-          container: mapContainer.current as HTMLElement,
+          container: mapContainer.current,
           style: "mapbox://styles/mapbox/streets-v12",
           center: [lng, lat],
           zoom: zoom,
-          pitch: 0,
-          bearing: 0,
           pitch: 0,
           bearing: 0,
           antialias: true,
@@ -313,16 +251,29 @@ export default function MapboxMap() {
             layout: {},
             paint: {
               "fill-color": [
-                'match',
-                ['get', 'NAME'],
+                "match",
+                ["get", "NAME"],
                 // Color specific clusters red
-                ['Cluster 44', 'Cluster 39', 'Cluster 43', 'Cluster 37', 
-                 'Cluster 38', 'Cluster 36', 'Cluster 28', 'Cluster 34', 
-                 'Cluster 35', 'Cluster 32', 'Cluster 30', 'Cluster 33',
-                 'Cluster 29', 'Cluster 31'], 'red',
-                'rgba(0, 0, 0, 0.1)'  // Default color for all other clusters
+                [
+                  "Cluster 44",
+                  "Cluster 39",
+                  "Cluster 43",
+                  "Cluster 37",
+                  "Cluster 38",
+                  "Cluster 36",
+                  "Cluster 28",
+                  "Cluster 34",
+                  "Cluster 35",
+                  "Cluster 32",
+                  "Cluster 30",
+                  "Cluster 33",
+                  "Cluster 29",
+                  "Cluster 31",
+                ],
+                "red",
+                "rgba(0, 0, 0, 0.1)", // Default color for all other clusters
               ],
-              "fill-opacity": 0.5
+              "fill-opacity": 0.5,
             },
           });
 
@@ -455,56 +406,6 @@ export default function MapboxMap() {
           weatherControls.appendChild(createButton("Snow", "snow"));
 
           mapContainer.current?.appendChild(weatherControls);
-
-          // Updated weather controls with active state
-          const weatherControls = document.createElement("div");
-          weatherControls.className = "absolute top-4 right-4 flex gap-2";
-
-          const createButton = (
-            text: string,
-            type: "clear" | "rain" | "snow"
-          ) => {
-            const button = document.createElement("button");
-            button.className = `px-4 py-2 rounded-lg shadow-lg transition-colors ${
-              weatherType === type
-                ? "bg-blue-500 text-white hover:bg-blue-600"
-                : "bg-white hover:bg-gray-100"
-            }`;
-            button.textContent = text;
-            button.onclick = () => {
-              if (!map.current) return;
-              setWeatherType(type);
-              switch (type) {
-                case "rain":
-                  addRainEffect(map.current);
-                  break;
-                case "snow":
-                  addSnowEffect(map.current);
-                  break;
-                case "clear":
-                  clearWeather(map.current);
-                  break;
-              }
-
-              // Update all buttons' styles
-              weatherControls.querySelectorAll("button").forEach((btn) => {
-                if (btn.textContent === text) {
-                  btn.className =
-                    "px-4 py-2 rounded-lg shadow-lg bg-blue-500 text-white hover:bg-blue-600";
-                } else {
-                  btn.className =
-                    "px-4 py-2 rounded-lg shadow-lg bg-white hover:bg-gray-100";
-                }
-              });
-            };
-            return button;
-          };
-
-          weatherControls.appendChild(createButton("Clear", "clear"));
-          weatherControls.appendChild(createButton("Rain", "rain"));
-          weatherControls.appendChild(createButton("Snow", "snow"));
-
-          mapContainer.current?.appendChild(weatherControls);
         });
       } catch (error) {
         console.error("Error initializing map:", error);
@@ -516,7 +417,6 @@ export default function MapboxMap() {
     return () => {
       if (map.current) map.current.remove();
     };
-  }, [lng, lat, zoom, weatherType]);
   }, [lng, lat, zoom, weatherType]);
 
   return (
