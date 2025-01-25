@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { SimulationLayer } from "./SimulationLayer";
 
 // Define the type for our GeoJSON feature properties
 interface NeighborhoodProperties {
@@ -178,15 +179,21 @@ export default function MapboxMap() {
                 ["boolean", ["feature-state", "isGroceryStore"], false],
                 "#4287f5", // Blue color for grocery stores
                 // Original color interpolation for other buildings
-                ["interpolate",
+                [
+                  "interpolate",
                   ["linear"],
                   ["get", "height"],
-                  0, "#e6e6e6",
-                  50, "#c9d1d9",
-                  100, "#8b98a5",
-                  200, "#6e7c91",
-                  300, "#464f5d"
-                ]
+                  0,
+                  "#e6e6e6",
+                  50,
+                  "#c9d1d9",
+                  100,
+                  "#8b98a5",
+                  200,
+                  "#6e7c91",
+                  300,
+                  "#464f5d",
+                ],
               ],
               "fill-extrusion-height": [
                 "interpolate",
@@ -456,57 +463,32 @@ export default function MapboxMap() {
             data: "/data/Grocery_Store_Locations.geojson",
           });
 
-          // Add grocery stores layer
+          // Add grocery stores layer as circles instead of icons
           map.current.addLayer({
             id: "grocery-stores",
-            type: "symbol",
+            type: "circle",
             source: "grocery-stores",
-            layout: {
-              "icon-image": "grocery",
-              "icon-size": 0.75,
-              "icon-allow-overlap": true,
-              "text-field": ["get", "STORENAME"],
-              "text-offset": [0, 1.5],
-              "text-anchor": "top",
-              "text-size": 12,
-            },
             paint: {
-              "text-color": "#ffffff",
-              "text-halo-color": "#000000",
-              "text-halo-width": 1,
+              "circle-radius": 8,
+              "circle-color": "#4287f5",
+              "circle-opacity": 0.8,
+              "circle-stroke-width": 2,
+              "circle-stroke-color": "#ffffff",
             },
-            filter: ["==", "PRESENT24", "Yes"], // Only show currently operating stores
+            filter: ["==", "PRESENT24", "Yes"],
           });
 
-          // Load custom grocery store icon
-          map.current.loadImage(
-            "/grocery-icon.png", // You'll need to add this icon to your public folder
-            (error, image) => {
-              if (error) throw error;
-              if (image && map.current && !map.current.hasImage("grocery")) {
-                map.current.addImage("grocery", image);
-              }
-            }
-          );
-
           // Add popup for grocery stores
-          map.current.on(
-            "click",
-            "grocery-stores",
-            (
-              e: mapboxgl.MapMouseEvent & {
-                features?: mapboxgl.MapboxGeoJSONFeature[];
-              }
-            ) => {
-              if (!map.current || !e.features?.length) return;
+          map.current.on("click", "grocery-stores", (e) => {
+            if (!map.current || !e.features?.length) return;
 
-              const feature = e.features[0];
-              const props = feature.properties as GroceryStoreProperties;
-              const coordinates = (
-                feature.geometry as GeoJSON.Point
-              ).coordinates.slice();
+            const feature = e.features[0];
+            const props = feature.properties as GroceryStoreProperties;
+            const coordinates = (
+              feature.geometry as GeoJSON.Point
+            ).coordinates.slice();
 
-              const description = `
+            const description = `
               <div class="p-2">
                 <h3 class="font-bold text-lg mb-2">${props.STORENAME}</h3>
                 <p class="mb-1">${props.ADDRESS}</p>
@@ -520,12 +502,11 @@ export default function MapboxMap() {
               </div>
             `;
 
-              new mapboxgl.Popup()
-                .setLngLat(coordinates as [number, number])
-                .setHTML(description)
-                .addTo(map.current);
-            }
-          );
+            new mapboxgl.Popup()
+              .setLngLat(coordinates as [number, number])
+              .setHTML(description)
+              .addTo(map.current);
+          });
 
           // Change cursor on hover
           map.current.on("mouseenter", "grocery-stores", () => {
@@ -541,26 +522,32 @@ export default function MapboxMap() {
           });
 
           // After loading grocery stores data, set feature state for matching buildings
-          map.current.on('sourcedata', (e) => {
-            if (e.sourceId === 'grocery-stores' && e.isSourceLoaded && map.current) {
-              const groceryStores = map.current.querySourceFeatures('grocery-stores');
-              
-              groceryStores.forEach(store => {
-                const storeCoords = (store.geometry as GeoJSON.Point).coordinates;
-                
+          map.current.on("sourcedata", (e) => {
+            if (
+              e.sourceId === "grocery-stores" &&
+              e.isSourceLoaded &&
+              map.current
+            ) {
+              const groceryStores =
+                map.current.querySourceFeatures("grocery-stores");
+
+              groceryStores.forEach((store) => {
+                const storeCoords = (store.geometry as GeoJSON.Point)
+                  .coordinates;
+
                 // Query buildings at the grocery store location
                 const buildings = map.current?.queryRenderedFeatures(
                   map.current.project([storeCoords[0], storeCoords[1]]),
-                  { layers: ['3d-buildings'] }
+                  { layers: ["3d-buildings"] }
                 );
 
                 // Set feature state for the closest building
                 if (buildings && buildings.length > 0 && buildings[0].id) {
                   map.current?.setFeatureState(
                     {
-                      source: 'composite',
-                      sourceLayer: 'building',
-                      id: buildings[0].id
+                      source: "composite",
+                      sourceLayer: "building",
+                      id: buildings[0].id,
                     },
                     { isGroceryStore: true }
                   );
@@ -584,6 +571,7 @@ export default function MapboxMap() {
   return (
     <div className="relative h-full w-full">
       <div ref={mapContainer} className="h-full w-full" />
+      {map.current && <SimulationLayer map={map.current} />}
     </div>
   );
 }

@@ -70,3 +70,13 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Simulation styles */
+.person-marker {
+  transition: all 0.1s ease-out;
+}
+
+.person-marker:hover {
+  transform: scale(1.5);
+  opacity: 1 !important;
+}
