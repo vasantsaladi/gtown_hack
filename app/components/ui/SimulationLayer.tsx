@@ -1,8 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
-import Papa from "papaparse";
 
 interface CustomWindow extends Window {
   reloadAndReroute?: () => Promise<void>;
@@ -35,6 +34,13 @@ interface MongoStore {
   };
 }
 
+interface TractData {
+  origin: {
+    type: string;
+    coordinates: [number, number];
+  };
+}
+
 export function SimulationLayer({ map }: SimulationLayerProps) {
   const peopleRef = useRef<Person[]>([]);
   const routeCacheRef = useRef<Map<string, [number, number][]>>(new Map());
@@ -42,203 +48,197 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
   const [, setForceUpdate] = useState(0);
   const lastRequestRef = useRef<number>(0);
 
-  const getRoute = async (
-    start: [number, number],
-    end: [number, number]
-  ): Promise<[number, number][]> => {
-    const cacheKey = `${start[0]},${start[1]}-${end[0]},${end[1]}`;
-    const reverseKey = `${end[0]},${end[1]}-${start[0]},${start[1]}`;
+  const getRoute = useCallback(
+    async (
+      start: [number, number],
+      end: [number, number]
+    ): Promise<[number, number][]> => {
+      const cacheKey = `${start[0]},${start[1]}-${end[0]},${end[1]}`;
+      const reverseKey = `${end[0]},${end[1]}-${start[0]},${start[1]}`;
 
-    // Check both directions
-    if (routeCacheRef.current.has(cacheKey))
-      return routeCacheRef.current.get(cacheKey)!;
-    if (routeCacheRef.current.has(reverseKey))
-      return [...routeCacheRef.current.get(reverseKey)!].reverse();
+      if (routeCacheRef.current.has(cacheKey))
+        return routeCacheRef.current.get(cacheKey)!;
+      if (routeCacheRef.current.has(reverseKey))
+        return [...routeCacheRef.current.get(reverseKey)!].reverse();
 
-    // Rate limit: 1 request every 300ms (~3 requests/second)
-    const now = Date.now();
-    await new Promise((resolve) =>
-      setTimeout(resolve, Math.max(300 - (now - lastRequestRef.current), 0))
-    );
-    lastRequestRef.current = Date.now();
-
-    try {
-      const response = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?` +
-          new URLSearchParams({
-            steps: "true",
-            geometries: "geojson",
-            overview: "full",
-            access_token: mapboxgl.accessToken as string,
-            approaches: "curb;curb", // Snap to roads
-          })
+      const now = Date.now();
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(300 - (now - lastRequestRef.current), 0))
       );
+      lastRequestRef.current = Date.now();
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      try {
+        const response = await fetch(
+          `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?` +
+            new URLSearchParams({
+              steps: "true",
+              geometries: "geojson",
+              overview: "full",
+              access_token: mapboxgl.accessToken as string,
+              approaches: "curb;curb",
+            })
+        );
 
-      const json = await response.json();
-      const route = json.routes?.[0]?.geometry?.coordinates || [];
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      // Validate route
-      if (route.length > 1) {
-        routeCacheRef.current.set(cacheKey, route);
-        routeCacheRef.current.set(reverseKey, [...route].reverse());
+        const json = await response.json();
+        const route = json.routes?.[0]?.geometry?.coordinates || [];
+
+        if (route.length > 1) {
+          routeCacheRef.current.set(cacheKey, route);
+          routeCacheRef.current.set(reverseKey, [...route].reverse());
+        }
+
+        return route as [number, number][];
+      } catch (err) {
+        console.error("Routing error:", err);
+        return [];
       }
+    },
+    []
+  );
 
-      return route;
-    } catch (err) {
-      console.error("Routing error:", err);
-      return [];
-    }
-  };
+  const findNearestStore = useCallback(
+    (
+      point: [number, number],
+      stores: { features: StoreFeature[] }
+    ): [number, number] => {
+      let nearest = point;
+      let minDistance = Infinity;
 
-  const findNearestStore = (
-    point: [number, number],
-    stores: { features: StoreFeature[] }
-  ): [number, number] => {
-    let nearest = point;
-    let minDistance = Infinity;
+      stores.features.forEach((store) => {
+        const storeCoords = store.geometry.coordinates;
+        const distance = turf.distance(
+          turf.point(point),
+          turf.point(storeCoords)
+        );
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearest = storeCoords;
+        }
+      });
 
-    stores.features.forEach((store) => {
-      const storeCoords = store.geometry.coordinates;
-      const distance = turf.distance(
-        turf.point(point),
-        turf.point(storeCoords)
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearest = storeCoords;
-      }
-    });
+      return nearest;
+    },
+    []
+  );
 
-    return nearest;
-  };
+  const startAnimation = useCallback(() => {
+    const FIXED_SPEED = 0.005;
+
+    const animate = () => {
+      peopleRef.current.forEach((person) => {
+        const route = person.isReturning
+          ? [...person.route].reverse()
+          : person.route;
+
+        if (route.length < 2) return;
+
+        const line = turf.lineString(route);
+        const distance = turf.length(line);
+        const position = turf.along(line, person.progress * distance).geometry
+          .coordinates as [number, number];
+
+        person.marker.setLngLat(position);
+
+        person.progress += FIXED_SPEED;
+        if (person.progress >= 1) {
+          person.progress = 0;
+          person.isReturning = !person.isReturning;
+        }
+      });
+
+      setForceUpdate((prev) => prev + 1);
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
 
     const initialize = async () => {
-      const [tractsRes, storesRes, csvRes] = await Promise.all([
-        fetch("/data/Census_Tracts_in_2020.geojson"),
-        fetch("/data/Grocery_Store_Locations.geojson"),
-        fetch("/data/cleaned_census_tracts.csv"),
-      ]);
+      console.log("Starting initialization...");
 
-      const [tracts, stores, csvText] = await Promise.all([
-        tractsRes.json(),
-        storesRes.json(),
-        csvRes.text(),
-      ]);
+      try {
+        const originsRes = await fetch("/data/start_point.json");
+        if (!originsRes.ok) {
+          throw new Error("Failed to load start_point.json");
+        }
+        const origins = (await originsRes.json()) as Record<string, TractData>;
+        console.log("Loaded origins:", Object.keys(origins).length);
 
-      const csvData = Papa.parse(csvText, { header: true }).data as Array<{
-        GEOID: string;
-        pop_percent: string;
-      }>;
+        const storesRes = await fetch("/data/Grocery_Store_Locations.geojson");
+        if (!storesRes.ok) {
+          throw new Error("Failed to load stores data");
+        }
+        const stores = await storesRes.json();
 
-      const popMap = new Map(
-        csvData.map((row) => [row.GEOID, parseFloat(row.pop_percent)])
-      );
+        console.log("Creating dots for each tract...");
+        const people: Person[] = [];
 
-      const people: Person[] = [];
-      const TOTAL_PEOPLE = 100; // Reduced for better rate limit handling
+        // Create a dot for each origin point in the JSON
+        for (const [tractId, data] of Object.entries(origins)) {
+          const coordinates = data.origin.coordinates;
 
-      // Create markers first
-      tracts.features.forEach(
-        (tract: {
-          properties: { GEOID: string };
-          geometry: turf.AllGeoJSON;
-        }) => {
-          const tractId = tract.properties.GEOID;
-          const population = Math.round(
-            (popMap.get(tractId) || 0) * TOTAL_PEOPLE
-          );
+          // Create marker with small random offset
+          const home: [number, number] = [
+            coordinates[0] + (Math.random() - 0.5) * 0.0001,
+            coordinates[1] + (Math.random() - 0.5) * 0.0001,
+          ];
 
-          for (let i = 0; i < population && people.length < TOTAL_PEOPLE; i++) {
-            const home = turf.randomPoint(1, {
-              bbox: turf.bbox(tract.geometry),
-            }).features[0].geometry.coordinates as [number, number];
+          const targetStore = findNearestStore(home, stores);
 
-            const targetStore = findNearestStore(home, stores);
-
-            const el = document.createElement("div");
-            el.style.cssText = `
+          const el = document.createElement("div");
+          el.style.cssText = `
             width: 12px;
             height: 12px;
             background-color: #2ecc71;
             border-radius: 50%;
             border: 2px solid white;
-            box-shadow: 0 0 3px rgba(0,0,0,0.5);
+            box-shadow: 0 0 4px rgba(0,0,0,0.6);
           `;
 
-            const marker = new mapboxgl.Marker(el).setLngLat(home).addTo(map);
+          const marker = new mapboxgl.Marker({
+            element: el,
+            anchor: "center",
+          })
+            .setLngLat(home)
+            .addTo(map);
 
+          const route = await getRoute(home, targetStore);
+          if (route.length > 1) {
             people.push({
-              id: `person-${people.length}`,
+              id: `person-${tractId}`,
               marker,
               home,
               targetStore,
               progress: Math.random(),
               isReturning: Math.random() > 0.5,
-              route: [],
+              route,
               tractId,
             });
-          }
-        }
-      );
-
-      // Load routes sequentially
-      for (const person of people) {
-        if (!mounted) break;
-        try {
-          const route = await getRoute(person.home, person.targetStore);
-          if (route.length > 1) {
-            person.route = route;
+            console.log(`Created dot for tract ${tractId}`);
           } else {
-            person.marker.remove();
+            marker.remove();
+            console.warn(`No valid route for tract ${tractId}`);
           }
-        } catch (err) {
-          console.error("Routing error for person:", person.id, err);
-          person.marker.remove();
+
+          // Add delay between route requests
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          if (!mounted) break;
         }
-        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        console.log(`Created ${people.length} active dots`);
+        peopleRef.current = people;
+
+        if (people.length > 0) {
+          startAnimation();
+        }
+      } catch (error) {
+        console.error("Initialization error:", error);
       }
-
-      peopleRef.current = people.filter((p) => p.route.length > 1);
-      startAnimation();
-    };
-
-    const startAnimation = () => {
-      const FIXED_SPEED = 0.005; // Adjust this value to change speed (smaller = slower)
-
-      const animate = () => {
-        if (!mounted) return;
-
-        peopleRef.current.forEach((person) => {
-          const route = person.isReturning
-            ? [...person.route].reverse()
-            : person.route;
-
-          if (route.length < 2) return;
-
-          const line = turf.lineString(route);
-          const distance = turf.length(line);
-          const position = turf.along(line, person.progress * distance).geometry
-            .coordinates as [number, number];
-
-          person.marker.setLngLat(position);
-
-          person.progress += FIXED_SPEED;
-          if (person.progress >= 1) {
-            person.progress = 0;
-            person.isReturning = !person.isReturning;
-          }
-        });
-
-        setForceUpdate((prev) => prev + 1);
-        animationRef.current = requestAnimationFrame(animate);
-      };
-
-      animationRef.current = requestAnimationFrame(animate);
     };
 
     initialize();
@@ -248,47 +248,37 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
       cancelAnimationFrame(animationRef.current);
       peopleRef.current.forEach((p) => p.marker.remove());
     };
-  }, [map]);
+  }, [map, findNearestStore, getRoute, startAnimation]);
 
-  async function reloadAndReroute() {
+  const reloadAndReroute = useCallback(async () => {
     try {
-      // Fetch all stores including new one
       const response = await fetch("/api/get-stores");
       const stores = await response.json();
-      console.log("Fetched stores:", stores);
 
-      // For each person
       for (const person of peopleRef.current) {
-        console.log("Person home:", person.home);
         let nearestStore = person.targetStore;
         let minDistance = turf.distance(
           turf.point(person.home),
           turf.point(nearestStore)
         );
 
-        // Check each store
         stores.forEach((store: MongoStore) => {
-          // The coordinates are already numbers, no need to parse
           const storeCoords: [number, number] = [
             store.geometry.coordinates[0],
             store.geometry.coordinates[1],
           ];
-
-          console.log("Store coordinates:", storeCoords);
 
           const distance = turf.distance(
             turf.point(person.home),
             turf.point(storeCoords)
           );
 
-          // If this store is closer, update target
           if (distance < minDistance) {
             minDistance = distance;
             nearestStore = storeCoords;
           }
         });
 
-        // If a closer store was found, update route
         if (nearestStore !== person.targetStore) {
           person.targetStore = nearestStore;
           person.progress = 0;
@@ -302,9 +292,8 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
     } catch (err) {
       console.error("Error reloading routes:", err);
     }
-  }
+  }, [getRoute]);
 
-  // Expose the function to the window for access
   useEffect(() => {
     (window as CustomWindow).reloadAndReroute = reloadAndReroute;
     return () => {
