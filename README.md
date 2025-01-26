@@ -4,7 +4,7 @@ An interactive simulation tool designed to help alleviate food deserts in Washin
 
 ## Overview
 
-This project helps urban planners and policymakers combat food deserts in DC by simulating residents' access to grocery stores. Using real-time animations and demographic data, it visualizes how residents navigate to their nearest grocery stores, highlighting areas where access to fresh food is limited.
+This project helps urban planners and policymakers combat food deserts in DC by simulating residents' access to grocery stores. Using real-time animations and demographic data, it visualizes how residents navigate to their nearest grocery stores, highlighting areas where access to fresh food is limited and how adding new grocery stores could combat food insecurity.
 
 ## Purpose
 
@@ -27,13 +27,12 @@ This project helps urban planners and policymakers combat food deserts in DC by 
   - Add potential new grocery store locations via drag-and-drop
   - Watch how new stores affect resident travel patterns
   - Analyze impact on food desert zones
-  - Calculate improved access metrics
 
 - **Data Insights**
   - Population density and demographic overlays
   - Walking distance analysis
   - Food insecurity heat maps
-  - Demographic impact statistics
+  - Demographic statistics
 
 ## Technology Stack
 
@@ -44,9 +43,9 @@ This project helps urban planners and policymakers combat food deserts in DC by 
   - Mapbox GL JS
   - Turf.js for geospatial calculations
 
-- **Data Sources**
+- **Data Sources (DC area only)**
   - DC Census tract boundaries
-  - Current grocery store locations
+  - Current fully operational grocery store locations
   - Demographic data
   - Food access metrics
 
@@ -68,7 +67,7 @@ This project helps urban planners and policymakers combat food deserts in DC by 
 3. Create a `.env.local` file with your Mapbox token:
 
    ```
-   NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_token_here
+   MAPBOX_TOKEN=your_mapbox_token_here
    ```
 
 4. Run the development server:
@@ -99,9 +98,9 @@ This project helps urban planners and policymakers combat food deserts in DC by 
 ### Impact Assessment
 
 - Drag and drop new grocery stores onto the map
-- Watch real-time updates to resident travel patterns
-- See immediate impact on food desert zones
-- Analyze changes in accessibility metrics
+- Watch real-time updates to resident travel patterns to grocery stores
+- See impact on people's accessibility to their nearest grocery stores
+- Observe improved convenience for people closer to a new grocery store
 
 ### Data Visualization
 
@@ -109,37 +108,27 @@ This project helps urban planners and policymakers combat food deserts in DC by 
   - Total population affected
   - Current food access metrics
   - Demographic breakdown
-  - Average distance to grocery stores
 - Click grocery stores to view:
   - Store details
-  - Population served
+  - Population/Ward served
   - Coverage area
-  - Impact metrics
 
 ## Using the Simulation
 
 1. **Observe Current State**
 
-   - Watch green dots move along actual walking routes
+   - Watch green dots move along actual roads and sidewalks
    - Note areas with longer travel times
    - Identify food desert zones (darker red areas)
 
 2. **Test Solutions**
 
    - Drag new grocery store icons onto the map
-   - Watch how travel patterns change
-   - Observe reductions in food desert intensity
+   - Watch how travel patterns and flow change
+   - New stores result in shorter travel for people in food insecure areas
 
 3. **Analyze Impact**
    - Review updated metrics
    - Compare travel times
    - Assess population coverage
    - Evaluate demographic impact
-
-## Contributing
-
-Contributions to improve the simulation or add features are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-[Add your license here]
