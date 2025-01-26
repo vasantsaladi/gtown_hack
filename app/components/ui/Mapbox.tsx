@@ -29,6 +29,9 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
   useEffect(() => {
     const initializeMap = async () => {
       try {
+        // Clear stores collection on load
+        await fetch("/api/clear-stores", { method: "POST" });
+
         mapboxgl.accessToken = mapboxToken;
 
         if (map.current || !mapContainer.current) return;
