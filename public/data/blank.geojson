@@ -1,0 +1,42 @@
+{
+  "type": "FeatureCollection",
+  "name": "Grocery_Store_Locations",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "coordinates": [
+        38.937262188097975,
+        -77.01146230581837
+      ]
+    },
+    {
+      "coordinates": [
+        38.94411566985141,
+        -77.0132348022933
+      ]
+    },
+    {
+      "coordinates": [
+        38.97338859678635,
+        -77.06328323281095
+      ]
+    },
+    {
+      "coordinates": [
+        38.8463380580863,
+        -77.00276797109717
+      ]
+    },
+    {
+      "coordinates": [
+        38.89476253633012,
+        -76.9197747048969
+      ]
+    }
+  ]
+}

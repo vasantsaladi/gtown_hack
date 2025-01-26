@@ -484,27 +484,37 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             // Convert screen coords to map coords
             const point = map.current.unproject([e.clientX, e.clientY]);
 
-            // Grab the "grocery-stores" source
-            const source = map.current.getSource(
-              "grocery-stores"
-            ) as mapboxgl.GeoJSONSource;
+            // Save coordinates to blank.geojson via API
+            try {
+              await fetch('/api/save-coordinates', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  coordinates: [point.lat, point.lng]
+                })
+              });
+            } catch (error) {
+              console.error('Error saving coordinates:', error);
+            }
+
+            // Update map visualization (existing code)
+            const source = map.current.getSource("grocery-stores") as mapboxgl.GeoJSONSource;
             if (!source) return;
 
             let currentData: GeoJSON.FeatureCollection;
             if (typeof source._data === "string") {
-              // If it's still the URL, fetch the real data
               const response = await fetch(source._data);
               currentData = await response.json();
             } else {
               currentData = source._data as GeoJSON.FeatureCollection;
             }
 
-            // Ensure features array
             if (!currentData.features) {
               currentData.features = [];
             }
 
-            // Create new store feature
             const newFeature: GeoJSON.Feature = {
               type: "Feature",
               geometry: {
