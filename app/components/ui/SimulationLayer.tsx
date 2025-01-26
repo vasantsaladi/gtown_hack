@@ -41,6 +41,12 @@ interface TractData {
   };
 }
 
+interface FoodAccessFeature extends GeoJSON.Feature {
+  properties: {
+    PERCENTUND185: number;
+  } | null;
+}
+
 export function SimulationLayer({ map }: SimulationLayerProps) {
   const peopleRef = useRef<Person[]>([]);
   const routeCacheRef = useRef<Map<string, [number, number][]>>(new Map());
@@ -252,9 +258,50 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
   const reloadAndReroute = useCallback(async () => {
     try {
+      // Fetch all stores
       const response = await fetch("/api/get-stores");
       const stores = await response.json();
 
+      // Fetch the food access areas data afresh
+      const foodAccessResponse = await fetch(
+        "/data/Low_Food_Access_Areas.geojson"
+      );
+      const foodAccessData = await foodAccessResponse.json();
+
+      // Update food access areas
+      if (foodAccessData.features) {
+        foodAccessData.features = foodAccessData.features.map(
+          (feature: FoodAccessFeature) => {
+            const areaCenter = turf.center(feature);
+
+            // Check if any store is within 1 mile of the area center
+            const hasNearbyStore = stores.some((store: MongoStore) => {
+              const storePoint = turf.point([
+                store.geometry.coordinates[0],
+                store.geometry.coordinates[1],
+              ]);
+              const distance = turf.distance(areaCenter, storePoint, {
+                units: "miles",
+              });
+              return distance <= 1;
+            });
+
+            if (hasNearbyStore && feature.properties) {
+              feature.properties.PERCENTUND185 = 0;
+            }
+            return feature;
+          }
+        );
+
+        const foodAccessSource = map.getSource(
+          "food-access"
+        ) as mapboxgl.GeoJSONSource;
+        if (foodAccessSource) {
+          foodAccessSource.setData(foodAccessData);
+        }
+      }
+
+      // Continue with existing person rerouting code...
       for (const person of peopleRef.current) {
         let nearestStore = person.targetStore;
         let minDistance = turf.distance(
