@@ -1,27 +1,52 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
+import { MongoClient } from 'mongodb';
+
+if (!process.env.MONGODB_URI) {
+  throw new Error('Please add your Mongo URI to .env.local');
+}
 
 export async function POST(request: Request) {
+  let client;
   try {
     const { coordinates } = await request.json();
+    //console.log('Received coordinates:', coordinates);
     
-    // Read existing file
-    const filePath = path.join(process.cwd(), 'public/data/blank.geojson');
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    const data = JSON.parse(fileContent);
+    // Connect to MongoDB with correct database name
+    client = await MongoClient.connect(process.env.MONGODB_URI as string);
+    //console.log('Connected to MongoDB');
     
-    // Add new coordinates to features array
-    data.features.push({
-      coordinates: coordinates
+    const db = client.db('GTownHackDB');
+    //console.log('Accessed database');
+    
+    // Insert into correct collection
+    await db.collection('Stores').insertOne({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [coordinates[1], coordinates[0]]
+      },
+      properties: {
+        PRESENT24: "Yes",
+        STORENAME: "New Store",
+        ADDRESS: "Added via Drag & Drop",
+        ZIPCODE: 20001,
+        created_at: new Date()
+      }
     });
-    
-    // Write back to file
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+
+    //console.log('MongoDB insert result:', result);
     
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error saving coordinates:', error);
-    return NextResponse.json({ error: 'Failed to save coordinates' }, { status: 500 });
+    console.error('Detailed error:', error);
+    return NextResponse.json({ 
+      error: 'Failed to save coordinates',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
+  } finally {
+    if (client) {
+      await client?.close();
+      //console.log('MongoDB connection closed');
+    }
   }
 } 
