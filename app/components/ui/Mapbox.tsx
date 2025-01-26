@@ -143,7 +143,13 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
             const csvRows = csvText.split("\n").slice(1); // skip header row
 
             const censusData: {
-              [key: string]: { total_pop: number; pop_percent: number };
+              [key: string]: {
+                total_pop: number;
+                pop_percent: number;
+                white_percent: number;
+                black_percent: number;
+                hispanic_percent: number;
+              };
             } = {};
 
             csvRows.forEach((row) => {
@@ -154,6 +160,9 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               censusData[geoid] = {
                 total_pop: parseInt(columns[4]),
                 pop_percent: parseFloat(columns[3]),
+                white_percent: parseFloat(columns[21]),
+                black_percent: parseFloat(columns[22]),
+                hispanic_percent: parseFloat(columns[23]),
               };
             });
 
@@ -273,6 +282,9 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
                     `<div class="text-sm">
                       <p>Total Population: ${totalPop.toLocaleString()}</p>
                       <p>Population %: ${popPercent}%</p>
+                      <p>White %: ${(feature.properties.white_percent * 100).toFixed(2)}%</p>
+                      <p>Black %: ${(feature.properties.black_percent * 100).toFixed(2)}%</p>
+                      <p>Hispanic %: ${(feature.properties.hispanic_percent * 100).toFixed(2)}%</p>
                     </div>`
                   )
                   .addTo(map.current);
