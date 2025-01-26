@@ -4,6 +4,10 @@ import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
 import Papa from "papaparse";
 
+interface CustomWindow extends Window {
+  reloadAndReroute?: () => Promise<void>;
+}
+
 interface SimulationLayerProps {
   map: mapboxgl.Map;
 }
@@ -20,6 +24,12 @@ interface Person {
 }
 
 interface StoreFeature {
+  geometry: {
+    coordinates: [number, number];
+  };
+}
+
+interface MongoStore {
   geometry: {
     coordinates: [number, number];
   };
@@ -239,6 +249,68 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
       peopleRef.current.forEach((p) => p.marker.remove());
     };
   }, [map]);
+
+  async function reloadAndReroute() {
+    try {
+      // Fetch all stores including new one
+      const response = await fetch("/api/get-stores");
+      const stores = await response.json();
+      console.log("Fetched stores:", stores);
+
+      // For each person
+      for (const person of peopleRef.current) {
+        console.log("Person home:", person.home);
+        let nearestStore = person.targetStore;
+        let minDistance = turf.distance(
+          turf.point(person.home),
+          turf.point(nearestStore)
+        );
+
+        // Check each store
+        stores.forEach((store: MongoStore) => {
+          // The coordinates are already numbers, no need to parse
+          const storeCoords: [number, number] = [
+            store.geometry.coordinates[0],
+            store.geometry.coordinates[1],
+          ];
+
+          console.log("Store coordinates:", storeCoords);
+
+          const distance = turf.distance(
+            turf.point(person.home),
+            turf.point(storeCoords)
+          );
+
+          // If this store is closer, update target
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearestStore = storeCoords;
+          }
+        });
+
+        // If a closer store was found, update route
+        if (nearestStore !== person.targetStore) {
+          person.targetStore = nearestStore;
+          person.progress = 0;
+          person.isReturning = false;
+          const newRoute = await getRoute(person.home, nearestStore);
+          if (newRoute.length > 1) {
+            person.route = newRoute;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error reloading routes:", err);
+    }
+  }
+
+  // Expose the function to the window for access
+  useEffect(() => {
+    (window as CustomWindow).reloadAndReroute = reloadAndReroute;
+    return () => {
+      delete (window as CustomWindow).reloadAndReroute;
+    };
+  }, [reloadAndReroute]);
 
   return null;
 }

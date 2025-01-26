@@ -18,6 +18,10 @@ interface MapboxProps {
   mapboxToken: string;
 }
 
+interface CustomWindow extends Window {
+  reloadAndReroute?: () => Promise<void>;
+}
+
 export function Mapbox({ mapboxToken }: MapboxProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -372,13 +376,13 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
 
           const handleDrop = async (e: DragEvent) => {
             e.preventDefault();
-            if (!map.current) return;
+            const currentMap = map.current;
+            if (!currentMap) return;
 
-            // Convert screen coords to map coords
-            const point = map.current.unproject([e.clientX, e.clientY]);
+            const point = currentMap.unproject([e.clientX, e.clientY]);
 
-            // Save coordinates to blank.geojson via API
             try {
+              // Save to MongoDB
               await fetch("/api/save-coordinates", {
                 method: "POST",
                 headers: {
@@ -388,47 +392,55 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
                   coordinates: [point.lat, point.lng],
                 }),
               });
+
+              // Update map visualization
+              const source = currentMap.getSource(
+                "grocery-stores"
+              ) as mapboxgl.GeoJSONSource;
+              if (!source) return;
+
+              let currentData: GeoJSON.FeatureCollection;
+              if (typeof source._data === "string") {
+                const response = await fetch(source._data);
+                currentData = await response.json();
+              } else {
+                currentData = source._data as GeoJSON.FeatureCollection;
+              }
+
+              if (!currentData.features) {
+                currentData.features = [];
+              }
+
+              const newFeature: GeoJSON.Feature = {
+                type: "Feature",
+                geometry: {
+                  type: "Point",
+                  coordinates: [point.lng, point.lat],
+                },
+                properties: {
+                  PRESENT24: "Yes",
+                  STORENAME: "New Store",
+                  ADDRESS: "Added via Drag & Drop",
+                  //ZIPCODE: 20001,
+                  PHONE: null,
+                  WARD: "",
+                  NOTES: "Custom store",
+                },
+              };
+
+              currentData.features.push(newFeature);
+              source.setData(currentData);
+
+              // Call reloadAndReroute directly
+              if ((window as CustomWindow).reloadAndReroute) {
+                await (window as CustomWindow).reloadAndReroute!();
+                console.log("Rerouting triggered");
+              } else {
+                console.log("Reroute function not found");
+              }
             } catch (error) {
-              console.error("Error saving coordinates:", error);
+              console.error("Error handling drop:", error);
             }
-
-            // Update map visualization (existing code)
-            const source = map.current.getSource(
-              "grocery-stores"
-            ) as mapboxgl.GeoJSONSource;
-            if (!source) return;
-
-            let currentData: GeoJSON.FeatureCollection;
-            if (typeof source._data === "string") {
-              const response = await fetch(source._data);
-              currentData = await response.json();
-            } else {
-              currentData = source._data as GeoJSON.FeatureCollection;
-            }
-
-            if (!currentData.features) {
-              currentData.features = [];
-            }
-
-            const newFeature: GeoJSON.Feature = {
-              type: "Feature",
-              geometry: {
-                type: "Point",
-                coordinates: [point.lng, point.lat],
-              },
-              properties: {
-                PRESENT24: "Yes",
-                STORENAME: "New Store",
-                ADDRESS: "Added via Drag & Drop",
-                ZIPCODE: 20001,
-                PHONE: null,
-                WARD: "",
-                NOTES: "Custom store",
-              },
-            };
-
-            currentData.features.push(newFeature);
-            source.setData(currentData);
           };
 
           // Add event listeners
