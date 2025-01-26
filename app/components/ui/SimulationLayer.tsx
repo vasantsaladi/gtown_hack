@@ -198,6 +198,8 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
     };
 
     const startAnimation = () => {
+      const FIXED_SPEED = 0.005; // Adjust this value to change speed (smaller = slower)
+
       const animate = () => {
         if (!mounted) return;
 
@@ -215,14 +217,14 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
           person.marker.setLngLat(position);
 
-          person.progress += 0.02;
+          person.progress += FIXED_SPEED;
           if (person.progress >= 1) {
             person.progress = 0;
             person.isReturning = !person.isReturning;
           }
         });
 
-        setForceUpdate((prev) => prev + 1); // Force re-render
+        setForceUpdate((prev) => prev + 1);
         animationRef.current = requestAnimationFrame(animate);
       };
 

@@ -24,67 +24,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
   const [lng] = useState(-77.0369);
   const [lat] = useState(38.9072);
   const [zoom] = useState(12);
-  const [weatherType, setWeatherType] = useState<"clear" | "rain" | "snow">(
-    "clear"
-  );
   const [mapLoaded, setMapLoaded] = useState(false);
-
-  // Weather effect helper functions
-  const addRainEffect = (map: mapboxgl.Map) => {
-    map.setFog({
-      range: [0.5, 10],
-      color: "rgb(186, 210, 235)",
-      "high-color": "rgb(36, 92, 223)",
-      "horizon-blend": 0.1,
-      "space-color": "rgb(11, 11, 25)",
-      "star-intensity": 0,
-    });
-
-    map.setPaintProperty("sky", "sky-type", "gradient");
-    map.setPaintProperty("sky", "sky-gradient", [
-      "interpolate",
-      ["linear"],
-      ["sky-radial-progress"],
-      0.8,
-      "rgba(37, 45, 58, 1)",
-      1,
-      "rgba(87, 95, 108, 1)",
-    ]);
-  };
-
-  const addSnowEffect = (map: mapboxgl.Map) => {
-    map.setFog({
-      range: [0.5, 7],
-      color: "rgb(255, 255, 255)",
-      "high-color": "rgb(255, 255, 255)",
-      "horizon-blend": 0.3,
-      "space-color": "rgb(200, 200, 210)",
-      "star-intensity": 0,
-    });
-
-    map.setPaintProperty("sky", "sky-type", "gradient");
-    map.setPaintProperty("sky", "sky-gradient", [
-      "interpolate",
-      ["linear"],
-      ["sky-radial-progress"],
-      0.8,
-      "rgba(230, 230, 230, 1)",
-      1,
-      "rgba(200, 200, 200, 1)",
-    ]);
-  };
-
-  const clearWeather = (map: mapboxgl.Map) => {
-    map.setFog({
-      color: "rgb(220, 230, 240)",
-      "high-color": "rgb(150, 180, 220)",
-      "horizon-blend": 0.1,
-      "space-color": "rgb(25, 35, 60)",
-      "star-intensity": 0.15,
-    });
-
-    map.setPaintProperty("sky", "sky-type", "atmosphere");
-  };
 
   useEffect(() => {
     const initializeMap = async () => {
@@ -257,56 +197,6 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
               },
               filter: ["!=", ["get", "TRACT"], ""],
             });
-
-            // Weather buttons
-            const weatherControls = document.createElement("div");
-            weatherControls.className = "absolute top-4 right-4 flex gap-2";
-
-            const createButton = (
-              text: string,
-              type: "clear" | "rain" | "snow"
-            ) => {
-              const button = document.createElement("button");
-              button.className = `px-4 py-2 rounded-lg shadow-lg transition-colors ${
-                weatherType === type
-                  ? "bg-blue-500 text-white hover:bg-blue-600"
-                  : "bg-white hover:bg-gray-100"
-              }`;
-              button.textContent = text;
-              button.onclick = () => {
-                if (!map.current) return;
-                setWeatherType(type);
-                switch (type) {
-                  case "rain":
-                    addRainEffect(map.current);
-                    break;
-                  case "snow":
-                    addSnowEffect(map.current);
-                    break;
-                  case "clear":
-                  default:
-                    clearWeather(map.current);
-                    break;
-                }
-
-                // Re-style buttons
-                weatherControls.querySelectorAll("button").forEach((btn) => {
-                  if ((btn as HTMLButtonElement).textContent === text) {
-                    btn.className =
-                      "px-4 py-2 rounded-lg shadow-lg bg-blue-500 text-white hover:bg-blue-600";
-                  } else {
-                    btn.className =
-                      "px-4 py-2 rounded-lg shadow-lg bg-white hover:bg-gray-100";
-                  }
-                });
-              };
-              return button;
-            };
-
-            weatherControls.appendChild(createButton("Clear", "clear"));
-            weatherControls.appendChild(createButton("Rain", "rain"));
-            weatherControls.appendChild(createButton("Snow", "snow"));
-            mapContainer.current?.appendChild(weatherControls);
 
             // Low food access areas
             map.current.addSource("food-access", {
@@ -486,21 +376,23 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
 
             // Save coordinates to blank.geojson via API
             try {
-              await fetch('/api/save-coordinates', {
-                method: 'POST',
+              await fetch("/api/save-coordinates", {
+                method: "POST",
                 headers: {
-                  'Content-Type': 'application/json',
+                  "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                  coordinates: [point.lat, point.lng]
-                })
+                  coordinates: [point.lat, point.lng],
+                }),
               });
             } catch (error) {
-              console.error('Error saving coordinates:', error);
+              console.error("Error saving coordinates:", error);
             }
 
             // Update map visualization (existing code)
-            const source = map.current.getSource("grocery-stores") as mapboxgl.GeoJSONSource;
+            const source = map.current.getSource(
+              "grocery-stores"
+            ) as mapboxgl.GeoJSONSource;
             if (!source) return;
 
             let currentData: GeoJSON.FeatureCollection;
@@ -557,7 +449,7 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
         map.current.remove();
       }
     };
-  }, [lng, lat, zoom, weatherType, mapboxToken]);
+  }, [lng, lat, zoom, mapboxToken]);
 
   return (
     <div className="relative h-full w-full">
