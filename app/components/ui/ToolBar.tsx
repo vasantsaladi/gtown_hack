@@ -37,16 +37,58 @@ export function ToolBar() {
       </button>
 
       {!isCollapsed && (
-        <div className="mt-8 space-y-2">
-          <div
-            draggable
-            onDragStart={handleDragStart}
-            className="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-md cursor-grab active:cursor-grabbing"
-          >
-            <Store className="text-blue-500" />
-            <span className="text-sm">Add Grocery Store</span>
+        <>
+          <div className="mt-8 space-y-2">
+            <div
+              draggable
+              onDragStart={handleDragStart}
+              className="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-md cursor-grab active:cursor-grabbing"
+            >
+              <Store className="text-blue-500" />
+              <span className="text-sm">Add Grocery Store</span>
+            </div>
           </div>
-        </div>
+
+          {/* Legend */}
+          <div className="mt-4 p-2 border-t border-gray-200">
+            <h3 className="text-sm font-semibold mb-2">Legend</h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-blue-500"></div>
+                <span className="text-xs">Grocery Store</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-green-500"></div>
+                <span className="text-xs">Person</span>
+              </div>
+
+              {/* Food Desert Analysis */}
+              <div className="mt-4">
+                <h4 className="text-xs font-semibold mb-1">
+                  Food Desert Analysis
+                </h4>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-[#fee5d9]"></div>
+                    <span className="text-xs">0-30%: Minimal Issues</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-[#fcae91]"></div>
+                    <span className="text-xs">30-50%: Emerging</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-[#fb6a4a]"></div>
+                    <span className="text-xs">50-70%: Significant</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-[#a50f15]"></div>
+                    <span className="text-xs">70-100%: Severe</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
