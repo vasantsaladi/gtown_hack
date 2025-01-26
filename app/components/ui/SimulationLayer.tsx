@@ -124,7 +124,7 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
   );
 
   const startAnimation = useCallback(() => {
-    const FIXED_SPEED = 0.005;
+    const FIXED_SPEED = 0.0025;
 
     const animate = () => {
       peopleRef.current.forEach((person) => {
@@ -192,8 +192,8 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
           const el = document.createElement("div");
           el.style.cssText = `
-            width: 12px;
-            height: 12px;
+            width: 13px;
+            height: 13px;
             background-color: #2ecc71;
             border-radius: 50%;
             border: 2px solid white;
