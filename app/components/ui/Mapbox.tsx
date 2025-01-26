@@ -282,9 +282,15 @@ export function Mapbox({ mapboxToken }: MapboxProps) {
                     `<div class="text-sm">
                       <p>Total Population: ${totalPop.toLocaleString()}</p>
                       <p>Population %: ${popPercent}%</p>
-                      <p>White %: ${(feature.properties.white_percent * 100).toFixed(2)}%</p>
-                      <p>Black %: ${(feature.properties.black_percent * 100).toFixed(2)}%</p>
-                      <p>Hispanic %: ${(feature.properties.hispanic_percent * 100).toFixed(2)}%</p>
+                      <p>White %: ${(
+                        feature.properties.white_percent * 100
+                      ).toFixed(2)}%</p>
+                      <p>African American %: ${(
+                        feature.properties.black_percent * 100
+                      ).toFixed(2)}%</p>
+                      <p>Hispanic %: ${(
+                        feature.properties.hispanic_percent * 100
+                      ).toFixed(2)}%</p>
                     </div>`
                   )
                   .addTo(map.current);
