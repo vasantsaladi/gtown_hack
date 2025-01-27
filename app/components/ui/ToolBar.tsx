@@ -45,7 +45,7 @@ export function ToolBar() {
               className="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-md cursor-grab active:cursor-grabbing"
             >
               <Store className="text-blue-500" />
-              <span className="text-sm">Add Grocery Store</span>
+              <span className="text-sm">Drag + Drop a Grocery Store</span>
             </div>
           </div>
 
