@@ -53,6 +53,8 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
   const animationRef = useRef<number>(0);
   const [, setForceUpdate] = useState(0);
   const lastRequestRef = useRef<number>(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
   const getRoute = useCallback(
     async (
@@ -166,6 +168,8 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
 
     const initialize = async () => {
       console.log("Starting initialization...");
+      setLoading(true);
+      setLoadingProgress(0);
 
       try {
         const originsRes = await fetch("/data/start_point.json");
@@ -174,15 +178,20 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
         }
         const origins = (await originsRes.json()) as Record<string, TractData>;
         console.log("Loaded origins:", Object.keys(origins).length);
+        setLoadingProgress(10);
 
         const storesRes = await fetch("/data/Grocery_Store_Locations.geojson");
         if (!storesRes.ok) {
           throw new Error("Failed to load stores data");
         }
         const stores = await storesRes.json();
+        setLoadingProgress(20);
 
         console.log("Creating dots for each tract...");
         const people: Person[] = [];
+
+        const totalOrigins = Object.keys(origins).length;
+        let processedOrigins = 0;
 
         // Create a dot for each origin point in the JSON
         for (const [tractId, data] of Object.entries(origins)) {
@@ -231,6 +240,12 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
             console.warn(`No valid route for tract ${tractId}`);
           }
 
+          // Update loading progress
+          processedOrigins++;
+          setLoadingProgress(
+            20 + Math.floor((processedOrigins / totalOrigins) * 70)
+          );
+
           // Add delay between route requests
           await new Promise((resolve) => setTimeout(resolve, 300));
           if (!mounted) break;
@@ -242,8 +257,14 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
         if (people.length > 0) {
           startAnimation();
         }
+
+        setLoadingProgress(100);
+        setTimeout(() => {
+          if (mounted) setLoading(false);
+        }, 500); // Short delay to show 100% before hiding
       } catch (error) {
         console.error("Initialization error:", error);
+        setLoading(false);
       }
     };
 
@@ -348,5 +369,91 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
     };
   }, [reloadAndReroute]);
 
-  return null;
+  return (
+    <>
+      {loading && (
+        <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center z-50 p-4 overflow-auto">
+          <div className="text-white text-2xl font-bold mb-4">
+            Loading Food Access Simulation
+          </div>
+          <div className="w-64 h-3 bg-gray-700 rounded-full overflow-hidden mb-2">
+            <div
+              className="h-full bg-green-500 transition-all duration-300 ease-out"
+              style={{ width: `${loadingProgress}%` }}
+            ></div>
+          </div>
+          <div className="text-white mb-2">{loadingProgress}%</div>
+          <div className="text-white text-sm mb-6">
+            Creating routes for people to travel between homes and grocery
+            stores...
+          </div>
+
+          <div className="max-w-2xl bg-gray-900 p-6 rounded-lg text-white text-sm">
+            <h2 className="text-xl font-bold mb-3">
+              While You Wait: Quick Guide to the Simulation
+            </h2>
+
+            <h3 className="text-lg font-semibold mt-4 mb-2">
+              Population Simulation
+            </h3>
+            <ul className="list-disc pl-5 mb-3 space-y-1">
+              <li>
+                Green dots represent DC residents moving between homes and
+                grocery stores
+              </li>
+              <li>
+                Movement follows actual walking routes using Mapbox Directions
+                API
+              </li>
+              <li>One dot per census tract shows typical travel patterns</li>
+              <li>Routes update dynamically when new stores are added</li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mt-4 mb-2">
+              Food Desert Analysis
+            </h3>
+            <p className="mb-2">
+              Color gradient showing food insecurity levels:
+            </p>
+            <ul className="list-disc pl-5 mb-3 space-y-1">
+              <li>
+                <span className="text-pink-300">Light pink</span>: 0-30%
+                (minimal food access issues)
+              </li>
+              <li>
+                <span className="text-orange-300">Light orange</span>: 30-50%
+                (emerging food desert)
+              </li>
+              <li>
+                <span className="text-orange-500">Orange-red</span>: 50-70%
+                (significant food access problems)
+              </li>
+              <li>
+                <span className="text-red-600">Deep red</span>: 70-100% (severe
+                food desert)
+              </li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mt-4 mb-2">
+              Using the Simulation
+            </h3>
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>
+                Observe green dots moving along actual roads and sidewalks
+              </li>
+              <li>
+                Note areas with longer travel times and food desert zones
+                (darker red)
+              </li>
+              <li>
+                Drag new grocery store icons onto the map to test solutions
+              </li>
+              <li>Watch how travel patterns change with new stores</li>
+              <li>Review updated metrics to analyze impact</li>
+            </ol>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
