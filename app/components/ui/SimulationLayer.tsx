@@ -450,7 +450,7 @@ export function SimulationLayer({ map }: SimulationLayerProps) {
               </li>
               <li>Watch how travel patterns change with new stores</li>
               <li>Review updated metrics to analyze impact</li>
-              <li>Zoom in for the awesome 3D views!</li>
+              <li>Zoom in for the awesome 3D views!!!</li>
             </ol>
           </div>
         </div>
